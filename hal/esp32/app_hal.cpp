@@ -114,9 +114,13 @@ static const uint32_t screenWidth = SCREEN_WIDTH;
 static const uint32_t screenHeight = SCREEN_HEIGHT;
 
 const unsigned int lvBufferSize = screenWidth * 80;
-uint8_t lvBuffer[2][lvBufferSize];
+/* LVGL 9 asserts buf == lv_draw_buf_align(buf, cf); globals before this can leave an unaligned address. */
+__attribute__((aligned(32))) static uint8_t lvBuffer[2][lvBufferSize];
 
 bool weatherUpdate = true, notificationsUpdate = true, weatherUpdateFace = true;
+
+/** Set from BLE (NimBLE) notification callback; consumed in hal_loop on LVGL thread. */
+static volatile bool pendingNotificationAlert = false;
 
 ChronosTimer screenTimer;
 ChronosTimer alertTimer;
@@ -213,7 +217,7 @@ void my_disp_flush(lv_display_t *display, const lv_area_t *area, unsigned char *
     /*Calculate the stride of the destination (rotated) area too*/
     uint32_t dest_stride = lv_draw_buf_width_to_stride(lv_area_get_width(&rotated_area), cf);
     /*Have a buffer to store the rotated area and perform the rotation*/
-    static uint8_t rotated_buf[lvBufferSize];
+    __attribute__((aligned(32))) static uint8_t rotated_buf[lvBufferSize];
     lv_draw_sw_rotate(data, rotated_buf, w, h, src_stride, dest_stride, rotation, cf);
     /*Use the rotated area and rotated buffer from now on*/
     area = &rotated_area;
@@ -1000,11 +1004,13 @@ void ringerCallback(String caller, bool state)
 void notificationCallback(Notification notification)
 {
   Timber.d("Notification Received from %s at %s", notification.app.c_str(), notification.time.c_str());
-  Timber.d(notification.message.c_str());
+  /* Avoid long printf/Timber work on NimBLE stack; message is shown via showAlert on main loop. */
+  Timber.d("message length %u", (unsigned)notification.message.length());
+
   notificationsUpdate = true;
-  // onNotificationsOpen(click);
+  pendingNotificationAlert = true;
   feedbackRun(T_NOTIFICATION);
-  showAlert();
+  /* showAlert() uses LVGL — must run on the same thread as lv_timer_handler(), not nimble_host */
 }
 
 void configCallback(Config config, uint32_t a, uint32_t b)
@@ -2177,6 +2183,13 @@ void hal_loop()
   if (!transfer)
   {
     lv_timer_handler(); // Update the UI-
+
+    if (pendingNotificationAlert)
+    {
+      pendingNotificationAlert = false;
+      showAlert();
+    }
+
     delay(5);
 
     watch.loop();

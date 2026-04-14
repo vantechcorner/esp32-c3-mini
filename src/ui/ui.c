@@ -18,6 +18,8 @@
 #include "misc/lv_event_private.h"
 #include <string.h>
 
+LV_FONT_DECLARE(lv_font_nav_vn_16);
+
 #define UI_VERSION "6.3"
 
 const char *ui_info_text = "v" UI_VERSION " [fbiego]";
@@ -2143,6 +2145,7 @@ void addNotificationList(int appId, const char *message, int index)
       lv_obj_set_align(notificationText, LV_ALIGN_CENTER);
       lv_label_set_long_mode(notificationText, LV_LABEL_LONG_DOT);
       lv_label_set_text(notificationText, message);
+      lv_obj_set_style_text_font(notificationText, &lv_font_nav_vn_16, LV_PART_MAIN | LV_STATE_DEFAULT);
 
       lv_obj_add_event_cb(notificationItem, ui_event_messageClick, LV_EVENT_CLICKED, (void *)index);
 }
@@ -2623,7 +2626,7 @@ void ui_clockScreen_screen_init(void)
       lv_obj_set_align(ui_alertText, LV_ALIGN_LEFT_MID);
       lv_label_set_long_mode(ui_alertText, LV_LABEL_LONG_DOT);
       lv_label_set_text(ui_alertText, "this is a notification example");
-      lv_obj_set_style_text_font(ui_alertText, &lv_font_montserrat_16, LV_PART_MAIN | LV_STATE_DEFAULT);
+      lv_obj_set_style_text_font(ui_alertText, &lv_font_nav_vn_16, LV_PART_MAIN | LV_STATE_DEFAULT);
 
       lv_obj_add_event_cb(ui_alertPanel, ui_event_alertPanel, LV_EVENT_ALL, NULL);
       lv_obj_add_event_cb(ui_clockScreen, watchfaceEvents, LV_EVENT_ALL, NULL);
@@ -2848,12 +2851,14 @@ void ui_notificationScreen_screen_init(void)
       lv_obj_set_height(ui_messageTime, LV_SIZE_CONTENT); /// 1
       lv_obj_set_align(ui_messageTime, LV_ALIGN_CENTER);
       lv_label_set_text(ui_messageTime, "Chronos");
+      lv_obj_set_style_text_font(ui_messageTime, &lv_font_nav_vn_16, LV_PART_MAIN | LV_STATE_DEFAULT);
 
       ui_messageContent = lv_label_create(ui_messagePanel);
       lv_obj_set_width(ui_messageContent, 180);
       lv_obj_set_height(ui_messageContent, LV_SIZE_CONTENT); /// 1
       lv_obj_set_align(ui_messageContent, LV_ALIGN_CENTER);
       lv_label_set_text(ui_messageContent, "Download from Google Play to sync time and receive notifications");
+      lv_obj_set_style_text_font(ui_messageContent, &lv_font_nav_vn_16, LV_PART_MAIN | LV_STATE_DEFAULT);
 
       ui_messageList = lv_obj_create(ui_notificationScreen);
       lv_obj_set_width(ui_messageList, lv_pct(100));

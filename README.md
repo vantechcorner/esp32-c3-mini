@@ -25,12 +25,12 @@ https://github.com/user-attachments/assets/3cdc30e3-8383-4227-b88c-32bd1d464c70
  - Time (Time, Date, Day, Weather[Icon, Temp]) + Custom Watchfaces
  - ~~Installable custom watchfaces from Chronos app~~ ToDo - LVGL 9
  - Weather (City,Icon, Temp, Update time) (1 week forecast [Day, Icon, Temp]) (Hourly forecast [+wind, ])
- - Notifications (Icon, Time, Text) (List [Icon, Text] - 10 notifications) (Incoming call)
+ - Notifications (Icon, Time, Text) (List [Icon, Text] - 10 notifications) (Incoming call); on ESP32, labels use Vietnamese-capable fonts (see [Vietnamese fonts](#vietnamese-fonts-and-esp32-lvgl-notes))
  - Settings (Brightness, Timeout, Battery, About)
  - Control (Music Control, Find Phone, Bluetooth State) (Camera Capture)
  - QR Codes, Contacts
  - Games - Simon Says, Racing (Need to enable)
- - Navigation (Get Google Maps Navigation instructions on ESP32)
+ - Navigation (Google Maps directions on ESP32); route strings use the same Vietnamese font subset (see [Vietnamese fonts](#vietnamese-fonts-and-esp32-lvgl-notes))
  - Create custom apps with LVGL [sample](src/apps/sample/)
 
  ## Building
@@ -114,4 +114,30 @@ This is needed for additional functions on esp32 hardware as listed below.
 - Sync QR Links, & Contacts
 - Music control, find phone & Camera
 - Send Navigation instructions
+
+## Vietnamese fonts and ESP32 LVGL notes
+
+Built-in Montserrat fonts in LVGL only cover basic Latin. The ESP32 build also links **bitmap fonts** generated with [lv_font_conv](https://github.com/lvgl/lv_font_conv) from Montserrat Regular (plain bitmap, `bpp=4`, `--no-compress` so `LV_USE_FONT_COMPRESSED` can stay off in `lv_conf.h`):
+
+| File | Use |
+|------|-----|
+| [`src/apps/navigation/lv_font_nav_vn_16.c`](src/apps/navigation/lv_font_nav_vn_16.c) | Navigation & notification list/detail body |
+| [`src/apps/navigation/lv_font_nav_vn_20.c`](src/apps/navigation/lv_font_nav_vn_20.c) | Navigation (larger lines) |
+| [`src/apps/navigation/lv_font_nav_vn_30.c`](src/apps/navigation/lv_font_nav_vn_30.c) | Navigation (distance / title line) |
+
+Unicode ranges used: `0x20-0x7F`, `0xA0-0xFF`, `0x100-0x24F`, `0x1EA0-0x1EFF`, with fallback to the stock Montserrat size. Source TTF is ignored by git under `support/fonts/Montserrat*.ttf` (see [`.gitignore`](.gitignore)).
+
+**Regenerate** (after placing `support/fonts/Montserrat-Regular.ttf`):
+
+```bash
+npx lv_font_conv --font support/fonts/Montserrat-Regular.ttf -r 0x20-0x7F,0xA0-0xFF,0x100-0x24F,0x1EA0-0x1EFF --size 16 --bpp 4 --format lvgl --no-compress -o src/apps/navigation/lv_font_nav_vn_16.c --lv-font-name lv_font_nav_vn_16 --lv-fallback lv_font_montserrat_16
+```
+
+Repeat for `--size 20` / `30` and matching output names and `--lv-fallback`.
+
+**Notifications:** `ui_messageTime`, `ui_messageContent`, list rows, and `ui_alertText` in [`src/ui/ui.c`](src/ui/ui.c) use `lv_font_nav_vn_16`.
+
+**BLE / NimBLE:** Incoming notifications must not call LVGL from the NimBLE host task (stack and thread-safety). [`hal/esp32/app_hal.cpp`](hal/esp32/app_hal.cpp) sets `pendingNotificationAlert` in `notificationCallback` and runs `showAlert()` from `hal_loop()` after `lv_timer_handler()`.
+
+**Display buffers (LVGL 9):** `lv_display_set_buffers` requires draw buffers to be address-aligned. [`hal/esp32/app_hal.cpp`](hal/esp32/app_hal.cpp) declares `lvBuffer` (and the optional rotation scratch buffer) with `__attribute__((aligned(32)))`.
 
