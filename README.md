@@ -1,20 +1,6 @@
 # esp32-c3-mini
 A demo LVGL Watch project for ESP32 C3 mini 240*240 touch display development board. Can also be built natively to test the LVGL UI.
 
-## Videos
-- [`C3 UI on 466×466 AMOLED`](https://youtu.be/l3tHc5EIgos)
-- [`LVGL 9 update, Navigation`](https://youtu.be/qGODX6ALO_U)
-- [`ESP32 C3 mini LVGL`](https://youtu.be/u96OkjxC0Ro)
-- [`ESP32  Watchfaces LVGL`](https://youtu.be/lvRsTp9v6_k)
-- [`Waveshare ESP32 S3 (240x240 1.28” Round & 240x280 1.69” Rectangular)`](https://youtu.be/WXER_NX7LWI)
-- [`Installing custom watchfaces`](https://youtu.be/qXx6tj7s6pQ)
-
-
-
-https://github.com/user-attachments/assets/3cdc30e3-8383-4227-b88c-32bd1d464c70
-
-
-
 ## Screens Preview
 
 ![Preview](preview.png?raw=true "preview")
@@ -62,8 +48,11 @@ https://github.com/user-attachments/assets/3cdc30e3-8383-4227-b88c-32bd1d464c70
 - [CrowPanel ESP32 Display-1.28(R) 240x240](https://www.elecrow.com/crowpanel-esp32-display-1-28-r-inch-240-240-round-ips-display-capacitive-touch-spi-screen.html)
 - [M5 Stack Dial 240x240](https://docs.m5stack.com/en/core/M5Dial)
 - [ESP32 C3 Mini 1.28 240x240](https://www.aliexpress.com/item/1005006451631422.html)
+- [TTGO T-Display 1.14 240x135](https://github.com/Xinyuan-LilyGO/TTGO-T-Display)
 - [Waveshare S3 1.28 240x240](https://www.waveshare.com/product/esp32-s3-touch-lcd-1.28.htm)
 - [Waveshare S3 1.69 240x280](https://www.waveshare.com/esp32-s3-touch-lcd-1.69.htm)
+- [Waveshare ESP32-S3-LCD-1.54 240x240](https://www.waveshare.com/esp32-s3-lcd-1.54.htm)
+- [Waveshare ESP32-Touch-LCD-3.5 320x480](https://www.waveshare.com/esp32-touch-lcd-3.5.htm)
 - [Waveshare RP2040 1.28 240x240](https://www.waveshare.com/rp2040-touch-lcd-1.28.htm)
 - [Waveshare RP2040 1.69 240x280](https://www.waveshare.com/product/rp2040-touch-lcd-1.69.htm)
 - [Waveshare S3 1.75 466x466](https://www.waveshare.com/product/esp32-s3-touch-amoled-1.75.htm)
@@ -140,4 +129,10 @@ Repeat for `--size 20` / `30` and matching output names and `--lv-fallback`.
 **BLE / NimBLE:** Incoming notifications must not call LVGL from the NimBLE host task (stack and thread-safety). [`hal/esp32/app_hal.cpp`](hal/esp32/app_hal.cpp) sets `pendingNotificationAlert` in `notificationCallback` and runs `showAlert()` from `hal_loop()` after `lv_timer_handler()`.
 
 **Display buffers (LVGL 9):** `lv_display_set_buffers` requires draw buffers to be address-aligned. [`hal/esp32/app_hal.cpp`](hal/esp32/app_hal.cpp) declares `lvBuffer` (and the optional rotation scratch buffer) with `__attribute__((aligned(32)))`.
+
+### Waveshare ESP32-Touch-LCD-3.5 bring-up note
+
+For [`ESP32_TOUCH_LCD_35`](hal/esp32/displays/pins.h), the LCD power/reset lines are gated by a `TCA9554` IO expander. The display driver initializes `TCA9554` (`0x20`) and enables `P0..P2` **before** `gfx->begin()` in [`hal/esp32/displays/esp32_touch_lcd_35.hpp`](hal/esp32/displays/esp32_touch_lcd_35.hpp).
+
+If this step is skipped, the board may show **backlight on but no image** (black screen), even though BLE still works.
 

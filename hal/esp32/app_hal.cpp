@@ -37,6 +37,10 @@
 #include <ArduinoJson.h>
 #include <Wire.h>
 #include "app_hal.h"
+#include "ttgo_hal.h"
+#if defined(TTGO_TDISPLAY)
+#include "faces/ttgo_dashboard/ttgo_dashboard.h"
+#endif
 
 #include "feedback.h"
 
@@ -68,6 +72,12 @@
 #include "displays/cyd_2432.hpp"
 #elif defined(VIEWE_2_8)
 #include "displays/viewe_2_8.hpp"
+#elif defined(TTGO_TDISPLAY)
+#include "displays/ttgo_tdisplay.hpp"
+#elif defined(WAVESHARE_S3_LCD_154)
+#include "displays/waveshare_s3_lcd_154.hpp"
+#elif defined(ESP32_TOUCH_LCD_35)
+#include "displays/esp32_touch_lcd_35.hpp"
 #else
 #include "displays/generic.hpp"
 #endif
@@ -95,10 +105,161 @@ SensorPCF85063 rtc;
 #define FLASH FFat
 #define F_NAME "FATFS"
 
-#if defined(BUTTON_HOME) && (BUTTON_HOME != -1)
+#if (defined(BUTTON_HOME) && (BUTTON_HOME != -1)) || (defined(TTGO_TDISPLAY) && defined(TTGO_BUTTON_B)) || defined(WAVESHARE_S3_LCD_154) || defined(ESP32_TOUCH_LCD_35)
 #include "Button2.h"
+#if defined(BUTTON_HOME) && (BUTTON_HOME != -1)
 Button2 btn_home;
 #endif
+#if defined(TTGO_TDISPLAY) && defined(TTGO_BUTTON_B)
+Button2 btn_ttgo_b;
+#endif
+#endif
+
+#if defined(WAVESHARE_S3_LCD_154)
+static Button2 btn_key_plus;
+static Button2 btn_key_minus;
+static Button2 btn_key_pwr;
+extern ChronosTimer screenTimer;
+
+static lv_obj_t *waveshare_pages[4] = {nullptr, nullptr, nullptr, nullptr};
+
+static void waveshare_refresh_pages()
+{
+  /* ui_home can change when watchface is switched; keep page map in sync. */
+  waveshare_pages[0] = ui_home;
+  waveshare_pages[1] = ui_appListScreen;
+  waveshare_pages[2] = ui_notificationScreen;
+  waveshare_pages[3] = ui_settingsScreen;
+}
+
+static int waveshare_find_page_index(lv_obj_t *scr)
+{
+  waveshare_refresh_pages();
+  for (int i = 0; i < 4; i++)
+  {
+    if (waveshare_pages[i] != nullptr && waveshare_pages[i] == scr)
+    {
+      return i;
+    }
+  }
+  return -1;
+}
+
+static void waveshare_nav_to(int idx, bool forward)
+{
+  waveshare_refresh_pages();
+  if (idx < 0)
+  {
+    return;
+  }
+  lv_disp_t *d = lv_display_get_default();
+  if (!d)
+  {
+    return;
+  }
+  lv_obj_t *target = waveshare_pages[idx];
+  if (!target)
+  {
+    return;
+  }
+  lv_scr_load_anim_t anim = forward ? LV_SCR_LOAD_ANIM_MOVE_LEFT : LV_SCR_LOAD_ANIM_MOVE_RIGHT;
+  lv_screen_load_anim(target, anim, 220, 0, false);
+}
+
+static void waveshare_next_page()
+{
+  lv_disp_t *d = lv_display_get_default();
+  if (!d)
+  {
+    return;
+  }
+  lv_obj_t *act = lv_display_get_screen_active(d);
+  int cur = waveshare_find_page_index(act);
+  int next = (cur < 0) ? 0 : (cur + 1) % 4;
+  waveshare_nav_to(next, true);
+}
+
+static void waveshare_prev_page()
+{
+  lv_disp_t *d = lv_display_get_default();
+  if (!d)
+  {
+    return;
+  }
+  lv_obj_t *act = lv_display_get_screen_active(d);
+  int cur = waveshare_find_page_index(act);
+  int prev = (cur < 0) ? 0 : (cur + 3) % 4;
+  waveshare_nav_to(prev, false);
+}
+
+static void waveshare_go_home()
+{
+  if (ui_home)
+  {
+    lv_screen_load_anim(ui_home, LV_SCR_LOAD_ANIM_FADE_ON, 200, 0, false);
+  }
+}
+
+static void waveshare_key_plus_handler(Button2 &btn)
+{
+  auto t = btn.getType();
+  if (t != single_click && t != double_click && t != long_click)
+  {
+    return;
+  }
+  screen_on();
+  waveshare_next_page();
+}
+
+static void waveshare_key_minus_handler(Button2 &btn)
+{
+  auto t = btn.getType();
+  if (t != single_click && t != double_click && t != long_click)
+  {
+    return;
+  }
+  screen_on();
+  waveshare_prev_page();
+}
+
+static void waveshare_key_pwr_handler(Button2 &btn)
+{
+  lv_obj_t *actScr = lv_screen_active();
+  switch (btn.getType())
+  {
+  case single_click:
+    screen_on();
+    if (actScr != ui_home) waveshare_go_home();
+    break;
+  case long_click:
+    if (screenTimer.active && screenTimer.duration > 1 && actScr == ui_home)
+    {
+      screenTimer.time = millis() - screenTimer.duration - 1;
+    }
+    break;
+  default:
+    break;
+  }
+}
+#endif
+
+#if defined(ESP32_TOUCH_LCD_35)
+static Button2 btn_power_key;
+extern ChronosTimer screenTimer;
+static bool esp32_touch_pwr_prev_pressed = false;
+static unsigned long esp32_touch_pwr_last_toggle_ms = 0;
+
+static void esp32_touch_power_handler(Button2 &btn)
+{
+  (void)btn;
+  // handled by direct GPIO edge detection in hal_loop for better reliability
+}
+#endif
+
+extern "C" {
+void ui_navScreen_screen_init(void);
+lv_obj_t *get_nav_screen(void);
+}
 
 ChronosESP32 watch("Chronos C3");
 Preferences prefs;
@@ -113,7 +274,10 @@ GyroData gyro;
 static const uint32_t screenWidth = SCREEN_WIDTH;
 static const uint32_t screenHeight = SCREEN_HEIGHT;
 
-const unsigned int lvBufferSize = screenWidth * 80;
+#ifndef LV_BUFFER_LINES
+#define LV_BUFFER_LINES 80
+#endif
+const unsigned int lvBufferSize = screenWidth * LV_BUFFER_LINES;
 /* LVGL 9 asserts buf == lv_draw_buf_align(buf, cf); globals before this can leave an unaligned address. */
 __attribute__((aligned(32))) static uint8_t lvBuffer[2][lvBufferSize];
 
@@ -169,6 +333,7 @@ void setTimeout(int i);
 
 void hal_setup(void);
 void hal_loop(void);
+void screenBrightness(uint8_t value);
 
 void update_faces();
 void updateQrLinks();
@@ -251,26 +416,69 @@ void rounder_event_cb(lv_event_t *e)
   area->y2 = ((y2 >> 1) << 1) + 1;
 }
 
-/*Read the touchpad*/
+/*Read the touchpad — prefer Chronos app remote touch when connected (must match watch.setScreen). */
 void my_touchpad_read(lv_indev_t *indev_driver, lv_indev_data_t *data)
 {
-  bool touched;
-  uint8_t gesture;
-  uint16_t touchX, touchY;
-  // RemoteTouch rt = watch.getTouch(); // remote touch
-  // if (rt.state)
-  // {
-  //   // use remote touch when active
-  //   touched = rt.state;
-  //   touchX = rt.x;
-  //   touchY = rt.y;
-  // }
-  // else
-  // {
-  //   touched = tft.getTouch(&touchX, &touchY);
-  // }
+  (void)indev_driver;
+  bool touched = false;
+  uint16_t touchX = 0, touchY = 0;
 
-  touched = tft.getTouch(&touchX, &touchY);
+  const RemoteTouch rt = watch.getTouch();
+  if (watch.isConnected() && rt.state)
+  {
+    touched = true;
+#if defined(TTGO_TDISPLAY)
+    /* Chronos CS_135x240: portrait x=0..134, y=0..239. LVGL is 240x135 @ default rotate=1. */
+    uint32_t rx = rt.x;
+    uint32_t ry = rt.y;
+    if (rx > 134u)
+    {
+      rx = 134u;
+    }
+    if (ry > 239u)
+    {
+      ry = 239u;
+    }
+    int rot = prefs.getInt("rotate", 1);
+    if (rot == 0)
+    {
+      touchX = (uint16_t)rx;
+      touchY = (uint16_t)ry;
+    }
+    else if (rot == 1)
+    {
+      touchX = (uint16_t)ry;
+      touchY = (uint16_t)(134u - rx);
+    }
+    else if (rot == 2)
+    {
+      touchX = (uint16_t)(134u - rx);
+      touchY = (uint16_t)(239u - ry);
+    }
+    else
+    {
+      /* rotate 3 */
+      touchX = (uint16_t)(239u - ry);
+      touchY = (uint16_t)rx;
+    }
+#else
+    uint32_t rx = rt.x, ry = rt.y;
+    if (rx >= screenWidth)
+    {
+      rx = screenWidth - 1u;
+    }
+    if (ry >= screenHeight)
+    {
+      ry = screenHeight - 1u;
+    }
+    touchX = (uint16_t)rx;
+    touchY = (uint16_t)ry;
+#endif
+  }
+  else if (tft.getTouch(&touchX, &touchY))
+  {
+    touched = true;
+  }
 
   if (!touched)
   {
@@ -279,8 +487,6 @@ void my_touchpad_read(lv_indev_t *indev_driver, lv_indev_data_t *data)
   else
   {
     data->state = LV_INDEV_STATE_PRESSED;
-
-    /*Set the coordinates*/
     data->point.x = touchX;
     data->point.y = touchY;
     screen_on();
@@ -1531,6 +1737,39 @@ void onGameClosed()
   screenTimer.active = true;
 }
 
+#if defined(TTGO_TDISPLAY) && defined(TTGO_BUTTON_B)
+void ttgo_btn_b_handler(Button2 &btn)
+{
+  if (btn.getType() != single_click)
+  {
+    return;
+  }
+  lv_disp_t *d = lv_display_get_default();
+  if (!d)
+  {
+    return;
+  }
+  lv_obj_t *act = lv_display_get_screen_active(d);
+  if (act == ui_home)
+  {
+    if (!get_nav_screen())
+    {
+      ui_navScreen_screen_init();
+    }
+    if (get_nav_screen())
+    {
+      /* onGameOpened comes from LV_EVENT_SCREEN_LOADED on nav screen; avoid double-call */
+      lv_screen_load(get_nav_screen());
+    }
+  }
+  else if (get_nav_screen() && act == get_nav_screen())
+  {
+    /* onGameClosed from LV_EVENT_SCREEN_UNLOADED when leaving nav */
+    lv_screen_load(ui_home);
+  }
+}
+#endif
+
 void showAlert()
 {
   lv_disp_t *display = lv_display_get_default();
@@ -1840,7 +2079,15 @@ void hal_setup()
 
   prefs.begin("my-app");
 
+#if defined(TTGO_TDISPLAY)
+  int rt = prefs.getInt("rotate", 1);
+#elif defined(ESP32_TOUCH_LCD_35)
+  /* Force landscape for ESP32-Touch-LCD-3.5: 90deg clockwise. */
+  int rt = 1;
+  prefs.putInt("rotate", 1);
+#else
   int rt = prefs.getInt("rotate", 0);
+#endif
 
 #ifdef ELECROW_C3
   Wire.begin(4, 5);
@@ -1953,6 +2200,21 @@ void hal_setup()
     // showError(F_NAME, "Failed to mount the partition");
   }
 
+#if defined(WAVESHARE_S3_LCD_154)
+  if (!prefs.getBool("waveshare154_defaults_v1", false))
+  {
+    prefs.putBool("waveshare154_defaults_v1", true);
+    /* No-touch variant: keep auto navigation enabled by default. */
+    prefs.putBool("autonav", true);
+  }
+  if (!prefs.getBool("waveshare154_watchface_default_v2", false))
+  {
+    prefs.putBool("waveshare154_watchface_default_v2", true);
+    /* Restore project default watchface (index 0). */
+    prefs.putInt("watchface", 0);
+  }
+#endif
+
   int wf = prefs.getInt("watchface", 0);
 #ifdef ENABLE_CUSTOM_FACE
   String custom = prefs.getString("custom", "");
@@ -1989,8 +2251,11 @@ void hal_setup()
   watch.setScreen(CS_240x296_191_RTF);
 #elif defined(ESPS3_2_06)
   watch.setScreen(CS_410x494_200_RTF);
-#elif defined(VIEWE_SMARTRING) || defined(VIEWE_KNOB_15) ||  defined(ESPS3_1_75)
+#elif defined(VIEWE_SMARTRING) || defined(VIEWE_KNOB_15) || defined(ESPS3_1_75)
   watch.setScreen(CS_466x466_143_CTF);
+#elif defined(TTGO_TDISPLAY)
+  /* Match LilyGO 1.14" 135x240 so Chronos remote touch uses correct range (not generic 240x240). */
+  watch.setScreen(CS_135x240_114_RTF);
 #endif
   String chip = String(ESP.getChipModel());
   watch.setName(chip);
@@ -2030,12 +2295,47 @@ void hal_setup()
   // }
 
   // load saved preferences
+#if defined(TTGO_TDISPLAY)
+  if (!prefs.getBool("ttgo_dn_v1", false))
+  {
+    prefs.putBool("ttgo_dn_v1", true);
+    prefs.putBool("autonav", true);
+  }
+  /* One-time: 30 s screen timeout (index 3) + max brightness; change in Settings if needed */
+  if (!prefs.getBool("ttgo_defaults_v2", false))
+  {
+    prefs.putBool("ttgo_defaults_v2", true);
+    prefs.putInt("timeout", 3);
+    prefs.putInt("brightness", 255);
+  }
+#endif
+#if defined(TTGO_TDISPLAY)
+  int tm = prefs.getInt("timeout", 3); /* default 30 s (index 3) */
+  if (tm > 4)
+  {
+    tm = 4;
+  }
+  int br = prefs.getInt("brightness", 255);
+  if (br < 1)
+  {
+    br = 1;
+  }
+  else if (br > 255)
+  {
+    br = 255;
+  }
+#else
   int tm = prefs.getInt("timeout", 0);
-
   int br = prefs.getInt("brightness", 100);
+#endif
   circular = prefs.getBool("circular", false);
   alertSwitch = prefs.getBool("alerts", false);
   navSwitch = prefs.getBool("autonav", false);
+#if defined(WAVESHARE_S3_LCD_154)
+  /* No-touch board: force auto navigation available at runtime. */
+  navSwitch = true;
+  prefs.putBool("autonav", true);
+#endif
 
   lv_obj_scroll_to_y(ui_settingsList, 1, LV_ANIM_ON);
   lv_obj_scroll_to_y(ui_appList, 1, LV_ANIM_ON);
@@ -2160,6 +2460,39 @@ void hal_setup()
 
   ui_setup();
 
+#if defined(WAVESHARE_S3_LCD_154)
+  waveshare_refresh_pages();
+
+  pinMode(KEY_PLUS, INPUT_PULLUP);
+  pinMode(KEY_MINUS, INPUT_PULLUP);
+  pinMode(KEY_PWR, INPUT_PULLUP);
+
+  btn_key_plus.begin(KEY_PLUS);
+  btn_key_minus.begin(KEY_MINUS);
+  btn_key_pwr.begin(KEY_PWR);
+
+  btn_key_plus.setClickHandler(waveshare_key_plus_handler);
+  btn_key_plus.setDoubleClickHandler(waveshare_key_plus_handler);
+  btn_key_plus.setLongClickDetectedHandler(waveshare_key_plus_handler);
+  btn_key_plus.setLongClickTime(700);
+
+  btn_key_minus.setClickHandler(waveshare_key_minus_handler);
+  btn_key_minus.setDoubleClickHandler(waveshare_key_minus_handler);
+  btn_key_minus.setLongClickDetectedHandler(waveshare_key_minus_handler);
+  btn_key_minus.setLongClickTime(700);
+
+  btn_key_pwr.setClickHandler(waveshare_key_pwr_handler);
+  btn_key_pwr.setLongClickDetectedHandler(waveshare_key_pwr_handler);
+  btn_key_pwr.setLongClickTime(900);
+#endif
+
+#if defined(ESP32_TOUCH_LCD_35) && defined(KEY_PWR) && (KEY_PWR != -1)
+  pinMode(KEY_PWR, INPUT_PULLUP);
+  btn_power_key.begin(KEY_PWR);
+  btn_power_key.setClickHandler(esp32_touch_power_handler);
+  btn_power_key.setLongClickTime(900);
+#endif
+
 #if defined(BUTTON_HOME) && (BUTTON_HOME != -1)
   btn_home.begin(BUTTON_HOME);
 
@@ -2169,6 +2502,10 @@ void hal_setup()
   btn_home.setDoubleClickHandler(btn_home_handler);
   btn_home.setTripleClickHandler(btn_home_handler);
   btn_home.setLongClickTime(1000); // set long click time to 1000ms
+#endif
+#if defined(TTGO_TDISPLAY) && defined(TTGO_BUTTON_B)
+  btn_ttgo_b.begin(TTGO_BUTTON_B);
+  btn_ttgo_b.setClickHandler(ttgo_btn_b_handler);
 #endif
 
   Serial.println(heapUsage());
@@ -2196,6 +2533,33 @@ void hal_loop()
 
 #if defined(BUTTON_HOME) && (BUTTON_HOME != -1)
   btn_home.loop();
+#endif
+#if defined(TTGO_TDISPLAY) && defined(TTGO_BUTTON_B)
+  btn_ttgo_b.loop();
+#endif
+#if defined(WAVESHARE_S3_LCD_154)
+  btn_key_plus.loop();
+  btn_key_minus.loop();
+  btn_key_pwr.loop();
+#endif
+#if defined(ESP32_TOUCH_LCD_35) && defined(KEY_PWR) && (KEY_PWR != -1)
+  btn_power_key.loop();
+  bool pwr_pressed = (digitalRead(KEY_PWR) == LOW);
+  unsigned long now = millis();
+  if (pwr_pressed && !esp32_touch_pwr_prev_pressed && (now - esp32_touch_pwr_last_toggle_ms > 250))
+  {
+    esp32_touch_pwr_last_toggle_ms = now;
+    if (screenTimer.active)
+    {
+      screenTimer.active = false;
+      tft.setBrightness(0);
+    }
+    else
+    {
+      screen_on();
+    }
+  }
+  esp32_touch_pwr_prev_pressed = pwr_pressed;
 #endif
 
 #if defined(M5_STACK_DIAL) || defined(VIEWE_KNOB_15) || defined(ELECROW_S3)
@@ -2229,6 +2593,12 @@ void hal_loop()
       lv_label_set_text(ui_dateLabel, watch.getTime("%d\n%b").c_str());
       lv_label_set_text(ui_amPmLabel, watch.getAmPmC(false).c_str());
     }
+#if defined(TTGO_TDISPLAY)
+    else if (ui_home == ui_ttgoHome)
+    {
+      ttgo_hal_dashboard_loop();
+    }
+#endif
     else
     {
       update_faces();

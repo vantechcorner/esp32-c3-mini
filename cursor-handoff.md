@@ -32,6 +32,17 @@
 - `hal/esp32/app_hal.cpp`: `lvBuffer` và `rotated_buf` (SW_ROTATION) dùng `__attribute__((aligned(32)))` + `lvBuffer` là `static`.
 - Assert: `buf1 == lv_draw_buf_align(buf1, cf)` nếu địa chỉ mảng global lệch sau các object khác.
 
+## ESP32-Touch-LCD-3.5 — LCD enable qua TCA9554 (quan trọng)
+
+- Với `ESP32_TOUCH_LCD_35`, panel ST7796 có thể bị trạng thái **backlight sáng nhưng màn đen** sau một số lần flash/reset nếu không bật IO expander trước init LCD.
+- `hal/esp32/displays/esp32_touch_lcd_35.hpp` đã thêm bước:
+  - `Wire.begin(I2C_SDA, I2C_SCL);`
+  - cấu hình `TCA9554 @ 0x20`: register `0x03 = 0xF8` (P0..P2 output),
+  - kéo mức thấp ngắn (`0x01 = 0x00`) rồi bật P0..P2 (`0x01 = 0x07`),
+  - sau đó mới gọi `gfx->begin()`.
+- Ghi chú: cấu hình này bám theo hướng init của demo hãng Waveshare cho dòng `ESP32-Touch-LCD-3.5`.
+- Nếu gặp lại hiện tượng màn đen nhưng vẫn BLE pair được, kiểm tra đầu tiên là sequence enable TCA9554 này.
+
 ## README công khai
 
 - Mục **Vietnamese fonts and ESP32 LVGL notes** + cập nhật bullet Screens (xem `README.md` đã commit).

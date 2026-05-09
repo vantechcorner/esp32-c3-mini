@@ -52,4 +52,6 @@
 #include "../faces/smart_resized/smart_resized.h"
 #include "../faces/smart_resized_466/smart_resized_466.h"
 #include "../faces/tix_resized/tix_resized.h"
+#include "../faces/ttgo_dashboard/ttgo_dashboard.h"
+#include "../faces/ttgo_dashboard/ttgo_dash_internals.h"
 #include "../faces/wfb_resized/wfb_resized.h"

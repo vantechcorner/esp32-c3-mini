@@ -365,6 +365,101 @@
 
 #define MAX_FILE_OPEN 10
 
+#elif defined(TTGO_TDISPLAY)
+
+// TTGO T-Display ESP32 — ST7789V 1.14" 135x240, UI landscape 240x135
+#define SCREEN_WIDTH 240
+#define SCREEN_HEIGHT 135
+/* Visible area inside 240x240 GRAM; required or top shows garbage and UI is shifted (LovyanGFX issue #159, TFT_eSPI CGRAM) */
+#define OFFSET_X 52
+#define OFFSET_Y 40
+#define RGB_ORDER false
+
+#define I2C_SDA -1
+#define I2C_SCL -1
+#define TP_INT -1
+#define TP_RST -1
+
+#define SPI VSPI_HOST
+
+#define SCLK 18
+#define MOSI 19
+#define MISO -1
+#define DC 16
+#define CS 5
+#define RST 23
+#define BL 4
+
+#define BUZZER_PIN -1
+/* PRG/BOOT=GPIO0, right button=GPIO35 (LilyGo schematic) */
+#define TTGO_BUTTON_A 0
+#define TTGO_BUTTON_B 35
+#define BUTTON_HOME TTGO_BUTTON_A
+#define MAX_FILE_OPEN 10
+
+#elif defined(WAVESHARE_S3_LCD_154)
+
+// Waveshare ESP32-S3-LCD-1.54 (square LCD)
+// screen configs
+#define SCREEN_WIDTH 240
+#define SCREEN_HEIGHT 240
+#define OFFSET_X 0
+#define OFFSET_Y 0
+#define RGB_ORDER false
+
+// touch (touch variant)
+#define I2C_SDA 42
+#define I2C_SCL 41
+#define TP_INT 48
+#define TP_RST 47
+
+// display (SPI)
+#define SPI SPI2_HOST
+#define SCLK 38
+#define MOSI 39
+#define MISO -1
+#define DC 45
+#define CS 21
+#define RST 40
+#define BL 46
+
+// physical keys
+#define KEY_MINUS 0
+#define KEY_PLUS 4
+#define KEY_PWR 5
+
+#define BUZZER_PIN -1
+#define MAX_FILE_OPEN 20
+
+#elif defined(ESP32_TOUCH_LCD_35)
+
+// Waveshare ESP32-Touch-LCD-3.5 (ESP32, ST7796 + FT6336)
+#define SCREEN_WIDTH 480
+#define SCREEN_HEIGHT 320
+#define OFFSET_X 0
+#define OFFSET_Y 0
+#define RGB_ORDER false
+
+// Touch / PMU I2C
+#define I2C_SDA 21
+#define I2C_SCL 22
+#define TP_INT -1
+#define TP_RST -1
+
+// Display SPI
+#define SCLK 18
+#define MOSI 23
+#define MISO 19
+#define DC 27
+#define CS 5
+#define RST -1
+#define BL 25
+#define KEY_PWR 36
+
+#define BUZZER_PIN -1
+#define MAX_FILE_OPEN 20
+#define LV_BUFFER_LINES 40
+
 #else
 
 // screen configs

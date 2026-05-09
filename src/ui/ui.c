@@ -11,6 +11,9 @@
 
 #include "ui.h"
 #include "ui_helpers.h"
+#if defined(TTGO_TDISPLAY)
+#include "faces/ttgo_dashboard/ttgo_dashboard.h"
+#endif
 
 #include "display/lv_display_private.h"
 #include "indev/lv_indev_private.h"
@@ -19,6 +22,7 @@
 #include <string.h>
 
 LV_FONT_DECLARE(lv_font_nav_vn_16);
+LV_FONT_DECLARE(lv_font_nav_vn_20);
 
 #define UI_VERSION "6.3"
 
@@ -2230,7 +2234,7 @@ void addAppInfo(const void *src, const char *txt)
       lv_obj_set_y(ui_appDetailsText, 8);
       lv_label_set_text(ui_appDetailsText, txt);
       // lv_label_set_recolor(ui_appDetailsText, true);
-      lv_obj_set_style_text_font(ui_appDetailsText, &lv_font_montserrat_14, LV_PART_MAIN | LV_STATE_DEFAULT);
+      lv_obj_set_style_text_font(ui_appDetailsText, &lv_font_nav_vn_16, LV_PART_MAIN | LV_STATE_DEFAULT);
 }
 
 void addListDrive(const char *name, int total, int used, lv_event_cb_t event_cb)
@@ -2479,8 +2483,16 @@ void registerApp_cb(const char *name, const lv_image_dsc_t *icon, void (*callbac
 void init_face_select()
 {
       ui_faceSelect = lv_obj_create(NULL);
-      lv_obj_set_width(ui_faceSelect, 240);
-      lv_obj_set_height(ui_faceSelect, 240);
+      lv_disp_t *dpf = lv_display_get_default();
+      if (dpf)
+      {
+            lv_obj_set_size(ui_faceSelect, lv_display_get_horizontal_resolution(dpf), lv_display_get_vertical_resolution(dpf));
+      }
+      else
+      {
+            lv_obj_set_width(ui_faceSelect, 240);
+            lv_obj_set_height(ui_faceSelect, 240);
+      }
       lv_obj_set_align(ui_faceSelect, LV_ALIGN_CENTER);
       lv_obj_set_flex_flow(ui_faceSelect, LV_FLEX_FLOW_ROW);
       lv_obj_set_flex_align(ui_faceSelect, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -2664,7 +2676,7 @@ void ui_weatherScreen_screen_init(void)
       lv_obj_set_y(ui_weatherCity, -85);
       lv_obj_set_align(ui_weatherCity, LV_ALIGN_CENTER);
       lv_label_set_text(ui_weatherCity, "");
-      lv_obj_set_style_text_font(ui_weatherCity, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+      lv_obj_set_style_text_font(ui_weatherCity, &lv_font_nav_vn_20, LV_PART_MAIN | LV_STATE_DEFAULT);
 
       ui_weatherCurrentIcon = lv_image_create(ui_weatherPanel);
       lv_image_set_src(ui_weatherCurrentIcon, &ui_img_602206286);
@@ -2914,7 +2926,7 @@ void ui_settingsScreen_screen_init(void)
       lv_obj_set_align(ui_settingsTitle, LV_ALIGN_CENTER);
       lv_label_set_text(ui_settingsTitle, "Settings");
       lv_obj_set_style_text_align(ui_settingsTitle, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-      lv_obj_set_style_text_font(ui_settingsTitle, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+      lv_obj_set_style_text_font(ui_settingsTitle, &lv_font_nav_vn_20, LV_PART_MAIN | LV_STATE_DEFAULT);
       lv_obj_set_style_border_color(ui_settingsTitle, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
       lv_obj_set_style_border_opa(ui_settingsTitle, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
       lv_obj_set_style_border_width(ui_settingsTitle, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -3698,7 +3710,7 @@ void ui_appInfoScreen_screen_init(void)
       lv_obj_set_align(ui_appInfoTitle, LV_ALIGN_TOP_MID);
       lv_label_set_text(ui_appInfoTitle, "App Info");
       lv_obj_set_style_text_align(ui_appInfoTitle, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-      lv_obj_set_style_text_font(ui_appInfoTitle, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+      lv_obj_set_style_text_font(ui_appInfoTitle, &lv_font_nav_vn_20, LV_PART_MAIN | LV_STATE_DEFAULT);
       lv_obj_set_style_border_color(ui_appInfoTitle, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
       lv_obj_set_style_border_opa(ui_appInfoTitle, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
       lv_obj_set_style_border_width(ui_appInfoTitle, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -3739,7 +3751,7 @@ void ui_appInfoScreen_screen_init(void)
       lv_obj_set_x(ui_appDetailsText, 43);
       lv_obj_set_y(ui_appDetailsText, 8);
       lv_label_set_text(ui_appDetailsText, "Chronos app\nv3.9.0 (59)");
-      lv_obj_set_style_text_font(ui_appDetailsText, &lv_font_montserrat_14, LV_PART_MAIN | LV_STATE_DEFAULT);
+      lv_obj_set_style_text_font(ui_appDetailsText, &lv_font_nav_vn_16, LV_PART_MAIN | LV_STATE_DEFAULT);
 
       ui_appConnectionPanel = lv_obj_create(ui_appInfoPanel);
       lv_obj_set_width(ui_appConnectionPanel, 190);
@@ -3773,7 +3785,7 @@ void ui_appInfoScreen_screen_init(void)
       lv_obj_set_y(ui_appConnectionText, 8);
       lv_label_set_text(ui_appConnectionText, "Status\nDisconnected");
       // lv_label_set_recolor(ui_appConnectionText, true);
-      lv_obj_set_style_text_font(ui_appConnectionText, &lv_font_montserrat_14, LV_PART_MAIN | LV_STATE_DEFAULT);
+      lv_obj_set_style_text_font(ui_appConnectionText, &lv_font_nav_vn_16, LV_PART_MAIN | LV_STATE_DEFAULT);
 
       ui_appBatteryPanel = lv_obj_create(ui_appInfoPanel);
       lv_obj_set_width(ui_appBatteryPanel, 190);
@@ -3806,7 +3818,7 @@ void ui_appInfoScreen_screen_init(void)
       lv_obj_set_x(ui_appBatteryText, 43);
       lv_obj_set_y(ui_appBatteryText, 5);
       lv_label_set_text(ui_appBatteryText, "Battery - 45%");
-      lv_obj_set_style_text_font(ui_appBatteryText, &lv_font_montserrat_14, LV_PART_MAIN | LV_STATE_DEFAULT);
+      lv_obj_set_style_text_font(ui_appBatteryText, &lv_font_nav_vn_16, LV_PART_MAIN | LV_STATE_DEFAULT);
 
       ui_appBatteryLevel = lv_bar_create(ui_appBatteryPanel);
       lv_bar_set_value(ui_appBatteryLevel, 25, LV_ANIM_OFF);
@@ -3846,7 +3858,7 @@ void ui_callScreen_screen_init(void)
       lv_obj_set_y(ui_callLabel, 35);
       lv_obj_set_align(ui_callLabel, LV_ALIGN_TOP_MID);
       lv_label_set_text(ui_callLabel, "Incoming Call");
-      lv_obj_set_style_text_font(ui_callLabel, &lv_font_montserrat_16, LV_PART_MAIN | LV_STATE_DEFAULT);
+      lv_obj_set_style_text_font(ui_callLabel, &lv_font_nav_vn_16, LV_PART_MAIN | LV_STATE_DEFAULT);
 
       ui_callName = lv_label_create(ui_callScreen);
       lv_obj_set_width(ui_callName, 160);
@@ -3856,7 +3868,7 @@ void ui_callScreen_screen_init(void)
       lv_obj_set_align(ui_callName, LV_ALIGN_TOP_MID);
       lv_label_set_text(ui_callName, "Call Test");
       lv_obj_set_style_text_align(ui_callName, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-      lv_obj_set_style_text_font(ui_callName, &lv_font_montserrat_18, LV_PART_MAIN | LV_STATE_DEFAULT);
+      lv_obj_set_style_text_font(ui_callName, &lv_font_nav_vn_20, LV_PART_MAIN | LV_STATE_DEFAULT);
 
       lv_obj_add_event_cb(ui_callScreen, ui_event_callScreen, LV_EVENT_ALL, NULL);
 }
@@ -4158,7 +4170,14 @@ void ui_connectScreen_screen_init(void)
 void ui_watchfaces_init(void)
 {
       numFaces = 0;
+#if defined(TTGO_TDISPLAY)
+      init_ttgo_dashboard(registerWatchface_cb);
+      return;
+#endif
       registerWatchface_cb("Default", &digital_preview, &ui_clockScreen, NULL); // register the default watchface
+#ifdef NO_WATCHFACES
+      return;
+#endif
 
       // register other watchfaces by initializing them and passing the register callback
       init_face_elecrow(registerWatchface_cb);
@@ -4202,6 +4221,27 @@ void ui_watchfaces_init(void)
 void ui_update_watchfaces(int second, int minute, int hour, bool mode, bool am, int day, int month, int year, int weekday,
                           int temp, int icon, int battery, bool connection, int steps, int distance, int kcal, int bpm, int oxygen)
 {
+#ifdef NO_WATCHFACES
+      (void)second;
+      (void)minute;
+      (void)hour;
+      (void)mode;
+      (void)am;
+      (void)day;
+      (void)month;
+      (void)year;
+      (void)weekday;
+      (void)temp;
+      (void)icon;
+      (void)battery;
+      (void)connection;
+      (void)steps;
+      (void)distance;
+      (void)kcal;
+      (void)bpm;
+      (void)oxygen;
+      return;
+#endif
 
       update_check_elecrow(ui_home, second, minute, hour, mode, am, day, month, year, weekday, temp, icon, battery, connection, steps, distance, kcal, bpm, oxygen);
       update_check_34_2(ui_home, second, minute, hour, mode, am, day, month, year, weekday, temp, icon, battery, connection, steps, distance, kcal, bpm, oxygen);
@@ -4403,7 +4443,8 @@ void ui_init(void)
 
       ui_apps_init();
 
-      ui_home = ui_clockScreen;
+      ui_home = *faces[0].watchface;
+      lv_obj_set_parent(ui_errorWindow, ui_home);
 
       ui____initial_actions0 = lv_obj_create(NULL);
       lv_obj_add_event_cb(ui____initial_actions0, ui_event____initial_actions0, LV_EVENT_ALL, NULL);

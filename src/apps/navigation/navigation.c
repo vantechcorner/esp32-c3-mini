@@ -13,6 +13,44 @@
 
 #ifdef ENABLE_APP_NAVIGATION
 
+#include <stdbool.h>
+#include <string.h>
+
+#if defined(TTGO_TDISPLAY) || defined(WAVESHARE_S3_LCD_154) || defined(ESP32_TOUCH_LCD_35)
+/* "Rẽ phải về hướng Võ Thị Sáu" -> first line up to/including "về hướng", tên đường ở dòng 2 */
+static bool nav_split_ve_huong(const char *in, char *out, size_t out_len)
+{
+    if (in == NULL || out == NULL || out_len < 4) {
+        return false;
+    }
+    static const char *const keys[] = {"về hướng", "Về hướng"};
+    for (unsigned k = 0; k < sizeof(keys) / sizeof(keys[0]); k++) {
+        const char *p = strstr(in, keys[k]);
+        if (p == NULL) {
+            continue;
+        }
+        size_t klen = strlen(keys[k]);
+        const char *rest = p + klen;
+        while (*rest == ' ') {
+            rest++;
+        }
+        if (*rest == '\0') {
+            return false;
+        }
+        size_t line1_bytes = (size_t)(p - in) + klen;
+        size_t line2_len = strlen(rest);
+        if (line1_bytes + 1 + line2_len + 1 > out_len) {
+            return false;
+        }
+        memcpy(out, in, line1_bytes);
+        out[line1_bytes] = '\n';
+        memcpy(out + line1_bytes + 1, rest, line2_len + 1);
+        return true;
+    }
+    return false;
+}
+#endif
+
 LV_FONT_DECLARE(lv_font_nav_vn_16);
 LV_FONT_DECLARE(lv_font_nav_vn_20);
 LV_FONT_DECLARE(lv_font_nav_vn_30);
@@ -58,12 +96,173 @@ void ui_event_navScreen(lv_event_t *e)
 
 void ui_navScreen_screen_init()
 {
+    if (ui_navScreen != NULL)
+    {
+        return;
+    }
 
     ui_navScreen = lv_obj_create(NULL);
     lv_obj_remove_flag(ui_navScreen, LV_OBJ_FLAG_SCROLLABLE); /// Flags
     lv_obj_set_style_bg_color(ui_navScreen, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(ui_navScreen, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
 
+#if defined(WAVESHARE_S3_LCD_154)
+    {
+        lv_coord_t W = lv_display_get_horizontal_resolution(lv_display_get_default());
+        lv_coord_t H = lv_display_get_vertical_resolution(lv_display_get_default());
+        if (W < 10) W = 240;
+        if (H < 10) H = 240;
+
+        ui_navPanel = lv_obj_create(ui_navScreen);
+        lv_obj_set_size(ui_navPanel, W, H);
+        lv_obj_set_align(ui_navPanel, LV_ALIGN_CENTER);
+        lv_obj_remove_flag(ui_navPanel, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_style_radius(ui_navPanel, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_color(ui_navPanel, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_opa(ui_navPanel, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_border_width(ui_navPanel, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_pad_left(ui_navPanel, 10, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_pad_right(ui_navPanel, 10, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_pad_top(ui_navPanel, 8, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_pad_bottom(ui_navPanel, 10, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+        ui_navText = lv_label_create(ui_navPanel); /* ETA + duration + distance */
+        lv_obj_set_width(ui_navText, lv_pct(100));
+        lv_obj_set_align(ui_navText, LV_ALIGN_TOP_MID);
+        lv_label_set_long_mode(ui_navText, LV_LABEL_LONG_WRAP);
+        lv_label_set_text(ui_navText, "Navigation");
+        lv_obj_set_style_text_align(ui_navText, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_font(ui_navText, &lv_font_nav_vn_16, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_color(ui_navText, lv_color_hex(0x00BFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_pad_bottom(ui_navText, 4, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+        /* Reserve ~52px for 2 lines of vn_16 + padding so icon does not overlap ETA */
+        static const lv_coord_t ws154_icon_y = 56;
+
+        LV_DRAW_BUF_DEFINE_STATIC(cbuf_ws154, CANVAS_WIDTH, CANVAS_HEIGHT, LV_COLOR_FORMAT_I2);
+        LV_DRAW_BUF_INIT_STATIC(cbuf_ws154);
+        ui_navIconCanvas = lv_canvas_create(ui_navPanel);
+        lv_canvas_set_draw_buf(ui_navIconCanvas, &cbuf_ws154);
+        lv_obj_set_width(ui_navIconCanvas, 48);
+        lv_obj_set_height(ui_navIconCanvas, 48);
+        lv_obj_set_y(ui_navIconCanvas, ws154_icon_y);
+        lv_obj_set_align(ui_navIconCanvas, LV_ALIGN_TOP_MID);
+        lv_obj_remove_flag(ui_navIconCanvas, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_style_radius(ui_navIconCanvas, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_color(ui_navIconCanvas, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_opa(ui_navIconCanvas, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_border_width(ui_navIconCanvas, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_canvas_fill_bg(ui_navIconCanvas, lv_color_black(), LV_OPA_COVER);
+        lv_canvas_set_palette(ui_navIconCanvas, 0, lv_color32_make(0, 0, 0, 255));
+        lv_canvas_set_palette(ui_navIconCanvas, 1, lv_color32_make(255, 255, 255, 255));
+
+        ui_navIcon = lv_image_create(ui_navPanel);
+        lv_image_set_src(ui_navIcon, &ui_img_chronos_logo_png);
+        lv_obj_set_y(ui_navIcon, ws154_icon_y);
+        lv_obj_set_align(ui_navIcon, LV_ALIGN_TOP_MID);
+        lv_obj_remove_flag(ui_navIcon, LV_OBJ_FLAG_SCROLLABLE);
+
+        ui_navDistance = lv_label_create(ui_navPanel); /* title / road */
+        lv_obj_set_width(ui_navDistance, lv_pct(100));
+        lv_obj_set_y(ui_navDistance, ws154_icon_y + 48 + 8);
+        lv_obj_set_align(ui_navDistance, LV_ALIGN_TOP_MID);
+        lv_label_set_long_mode(ui_navDistance, LV_LABEL_LONG_WRAP);
+        lv_label_set_text(ui_navDistance, "Chronos");
+        lv_obj_set_style_text_align(ui_navDistance, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_font(ui_navDistance, &lv_font_nav_vn_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_color(ui_navDistance, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+
+        ui_navDirection = lv_label_create(ui_navPanel); /* turn instruction */
+        lv_obj_set_width(ui_navDirection, lv_pct(100));
+        lv_obj_set_height(ui_navDirection, 72);
+        /* ~52px for up to 2 lines of vn_20 title above directions */
+        lv_obj_set_y(ui_navDirection, ws154_icon_y + 48 + 8 + 52);
+        lv_obj_set_align(ui_navDirection, LV_ALIGN_TOP_MID);
+        lv_label_set_long_mode(ui_navDirection, LV_LABEL_LONG_WRAP);
+        lv_label_set_text(ui_navDirection, "Available on v3.7.5+");
+        lv_obj_set_style_text_align(ui_navDirection, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_font(ui_navDirection, &lv_font_nav_vn_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_color(ui_navDirection, lv_color_hex(0xC0C0C0), LV_PART_MAIN | LV_STATE_DEFAULT);
+    }
+#elif defined(ESP32_TOUCH_LCD_35)
+    {
+        lv_coord_t W = lv_display_get_horizontal_resolution(lv_display_get_default());
+        lv_coord_t H = lv_display_get_vertical_resolution(lv_display_get_default());
+        if (W < 10) W = 320;
+        if (H < 10) H = 480;
+
+        ui_navPanel = lv_obj_create(ui_navScreen);
+        lv_obj_set_size(ui_navPanel, W, H);
+        lv_obj_set_align(ui_navPanel, LV_ALIGN_CENTER);
+        lv_obj_remove_flag(ui_navPanel, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_style_radius(ui_navPanel, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_color(ui_navPanel, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_opa(ui_navPanel, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_border_width(ui_navPanel, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_pad_left(ui_navPanel, 12, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_pad_right(ui_navPanel, 12, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_pad_top(ui_navPanel, 14, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_pad_bottom(ui_navPanel, 14, LV_PART_MAIN | LV_STATE_DEFAULT);
+        static const lv_coord_t ws35_pad_tb = 14;
+
+        ui_navText = lv_label_create(ui_navPanel); /* ETA + duration + distance */
+        lv_obj_set_width(ui_navText, lv_pct(100));
+        lv_obj_set_align(ui_navText, LV_ALIGN_TOP_MID);
+        lv_label_set_long_mode(ui_navText, LV_LABEL_LONG_WRAP);
+        lv_label_set_text(ui_navText, "Navigation");
+        lv_obj_set_style_text_align(ui_navText, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_font(ui_navText, &lv_font_nav_vn_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_color(ui_navText, lv_color_hex(0x00BFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+
+        static const lv_coord_t ws35_icon_y = 84;
+        LV_DRAW_BUF_DEFINE_STATIC(cbuf_ws35, CANVAS_WIDTH, CANVAS_HEIGHT, LV_COLOR_FORMAT_I2);
+        LV_DRAW_BUF_INIT_STATIC(cbuf_ws35);
+        ui_navIconCanvas = lv_canvas_create(ui_navPanel);
+        lv_canvas_set_draw_buf(ui_navIconCanvas, &cbuf_ws35);
+        lv_obj_set_size(ui_navIconCanvas, 48, 48);
+        lv_obj_set_y(ui_navIconCanvas, ws35_icon_y);
+        lv_obj_set_align(ui_navIconCanvas, LV_ALIGN_TOP_MID);
+        lv_obj_remove_flag(ui_navIconCanvas, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_style_radius(ui_navIconCanvas, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_color(ui_navIconCanvas, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_opa(ui_navIconCanvas, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_border_width(ui_navIconCanvas, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_canvas_fill_bg(ui_navIconCanvas, lv_color_black(), LV_OPA_COVER);
+        lv_canvas_set_palette(ui_navIconCanvas, 0, lv_color32_make(0, 0, 0, 255));
+        lv_canvas_set_palette(ui_navIconCanvas, 1, lv_color32_make(255, 255, 255, 255));
+
+        ui_navIcon = lv_image_create(ui_navPanel);
+        lv_image_set_src(ui_navIcon, &ui_img_chronos_logo_png);
+        lv_obj_set_y(ui_navIcon, ws35_icon_y);
+        lv_obj_set_align(ui_navIcon, LV_ALIGN_TOP_MID);
+        lv_obj_remove_flag(ui_navIcon, LV_OBJ_FLAG_SCROLLABLE);
+
+        ui_navDistance = lv_label_create(ui_navPanel); /* title / road */
+        lv_obj_set_width(ui_navDistance, lv_pct(100));
+        lv_obj_set_y(ui_navDistance, ws35_icon_y + 62);
+        lv_obj_set_align(ui_navDistance, LV_ALIGN_TOP_MID);
+        lv_label_set_long_mode(ui_navDistance, LV_LABEL_LONG_WRAP);
+        lv_label_set_text(ui_navDistance, "Chronos");
+        lv_obj_set_style_text_align(ui_navDistance, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_font(ui_navDistance, &lv_font_nav_vn_30, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_color(ui_navDistance, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+
+        ui_navDirection = lv_label_create(ui_navPanel); /* turn instruction */
+        lv_obj_set_width(ui_navDirection, lv_pct(100));
+        /* Fill panel content below dir_top; old H - (icon_y+170) was only ~66px at H=320 and clipped vn_30 descenders */
+        {
+            lv_coord_t dir_top = ws35_icon_y + 126;
+            lv_obj_set_y(ui_navDirection, dir_top);
+            lv_obj_set_height(ui_navDirection, H - ws35_pad_tb - ws35_pad_tb - dir_top);
+        }
+        lv_obj_set_align(ui_navDirection, LV_ALIGN_TOP_MID);
+        lv_label_set_long_mode(ui_navDirection, LV_LABEL_LONG_WRAP);
+        lv_label_set_text(ui_navDirection, "Available on v3.7.5+");
+        lv_obj_set_style_text_align(ui_navDirection, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_font(ui_navDirection, &lv_font_nav_vn_30, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_color(ui_navDirection, lv_color_hex(0xC0C0C0), LV_PART_MAIN | LV_STATE_DEFAULT);
+    }
+#elif !defined(TTGO_TDISPLAY)
     ui_navPanel = lv_obj_create(ui_navScreen);
     lv_obj_set_width(ui_navPanel, 240);
     lv_obj_set_height(ui_navPanel, 240);
@@ -131,15 +330,93 @@ void ui_navScreen_screen_init()
     lv_obj_set_y(ui_navIcon, 76);
     lv_obj_set_align(ui_navIcon, LV_ALIGN_TOP_MID);
     lv_obj_remove_flag(ui_navIcon, LV_OBJ_FLAG_SCROLLABLE); /// Flags
+#else
+    {
+        lv_coord_t W = lv_display_get_horizontal_resolution(lv_display_get_default());
+        lv_coord_t H = lv_display_get_vertical_resolution(lv_display_get_default());
+        if (W < 10) W = 240;
+        if (H < 10) H = 135;
+        ui_navPanel = lv_obj_create(ui_navScreen);
+        lv_obj_set_size(ui_navPanel, W, H);
+        lv_obj_set_align(ui_navPanel, LV_ALIGN_CENTER);
+        lv_obj_remove_flag(ui_navPanel, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_style_radius(ui_navPanel, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_color(ui_navPanel, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_opa(ui_navPanel, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_border_width(ui_navPanel, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_pad_all(ui_navPanel, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_flex_flow(ui_navPanel, LV_FLEX_FLOW_ROW);
+        /* Main: start, Cross: center — keep row vertically centered in panel */
+        lv_obj_set_flex_align(ui_navPanel, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_column(ui_navPanel, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    // ui_navTitle = lv_label_create(ui_navPanel);
-    // lv_obj_set_width(ui_navTitle, LV_SIZE_CONTENT);  /// 1
-    // lv_obj_set_height(ui_navTitle, LV_SIZE_CONTENT); /// 1
-    // lv_obj_set_align(ui_navTitle, LV_ALIGN_TOP_MID);
-    // lv_label_set_text(ui_navTitle, "Navigation");
-    // lv_obj_set_style_text_align(ui_navTitle, LV_TEXT_ALIGN_AUTO, LV_PART_MAIN | LV_STATE_DEFAULT);
-    // lv_obj_set_style_text_decor(ui_navTitle, LV_TEXT_DECOR_UNDERLINE, LV_PART_MAIN | LV_STATE_DEFAULT);
-    // lv_obj_set_style_text_font(ui_navTitle, &lv_font_montserrat_16, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_t *left = lv_obj_create(ui_navPanel);
+        lv_obj_set_size(left, 56, H);
+        lv_obj_set_flex_flow(left, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_flex_align(left, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_bg_opa(left, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(left, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(left, 0, LV_PART_MAIN);
+
+        LV_DRAW_BUF_DEFINE_STATIC(cbuf_ttgo, CANVAS_WIDTH, CANVAS_HEIGHT, LV_COLOR_FORMAT_I2);
+        LV_DRAW_BUF_INIT_STATIC(cbuf_ttgo);
+        ui_navIconCanvas = lv_canvas_create(left);
+        lv_canvas_set_draw_buf(ui_navIconCanvas, &cbuf_ttgo);
+        lv_obj_set_width(ui_navIconCanvas, 48);
+        lv_obj_set_height(ui_navIconCanvas, 48);
+        lv_obj_remove_flag(ui_navIconCanvas, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_style_radius(ui_navIconCanvas, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_color(ui_navIconCanvas, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_opa(ui_navIconCanvas, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_border_width(ui_navIconCanvas, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_canvas_fill_bg(ui_navIconCanvas, lv_color_black(), LV_OPA_COVER);
+        lv_canvas_set_palette(ui_navIconCanvas, 0, lv_color32_make(0, 0, 0, 255));
+        lv_canvas_set_palette(ui_navIconCanvas, 1, lv_color32_make(255, 255, 255, 255));
+
+        ui_navIcon = lv_image_create(left);
+        lv_image_set_src(ui_navIcon, &ui_img_chronos_logo_png);
+        lv_obj_remove_flag(ui_navIcon, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_style_bg_opa(ui_navIcon, LV_OPA_TRANSP, LV_PART_MAIN);
+
+        /* flex_grow fills remaining width; do not use width 100% here — it confuses the row
+         * and can give the right column 0px so labels render invisible. */
+        lv_obj_t *rcol = lv_obj_create(ui_navPanel);
+        lv_obj_set_flex_grow(rcol, 1);
+        lv_obj_set_flex_flow(rcol, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_flex_align(rcol, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+        lv_obj_set_height(rcol, lv_pct(100));
+        lv_obj_set_style_bg_opa(rcol, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(rcol, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_row(rcol, 3, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(rcol, 0, LV_PART_MAIN);
+
+        /* navigateInfo: title -> ui_navDistance, text -> ui_navText, directions -> ui_navDirection */
+        ui_navDistance = lv_label_create(rcol);
+        lv_label_set_text(ui_navDistance, "Chronos");
+        lv_obj_set_width(ui_navDistance, lv_pct(100));
+        lv_label_set_long_mode(ui_navDistance, LV_LABEL_LONG_WRAP);
+        lv_obj_set_style_text_align(ui_navDistance, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_font(ui_navDistance, &lv_font_nav_vn_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_color(ui_navDistance, lv_color_hex(0x00BFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+
+        ui_navText = lv_label_create(rcol);
+        lv_label_set_text(ui_navText, "Navigation");
+        lv_obj_set_width(ui_navText, lv_pct(100));
+        lv_label_set_long_mode(ui_navText, LV_LABEL_LONG_WRAP);
+        lv_obj_set_style_text_align(ui_navText, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_font(ui_navText, &lv_font_nav_vn_16, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_color(ui_navText, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+
+        ui_navDirection = lv_label_create(rcol);
+        lv_label_set_text(ui_navDirection, "—");
+        lv_obj_set_width(ui_navDirection, lv_pct(100));
+        lv_obj_set_flex_grow(ui_navDirection, 1);
+        lv_label_set_long_mode(ui_navDirection, LV_LABEL_LONG_WRAP);
+        lv_obj_set_style_text_align(ui_navDirection, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_font(ui_navDirection, &lv_font_nav_vn_20, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_color(ui_navDirection, lv_color_hex(0xC0C0C0), LV_PART_MAIN | LV_STATE_DEFAULT);
+    }
+#endif
 
     lv_obj_add_event_cb(ui_navScreen, ui_event_navScreen, LV_EVENT_ALL, NULL);
 
@@ -154,7 +431,19 @@ void navigateInfo(const char *text, const char *title, const char *directions)
         return;
     }
     lv_label_set_text(ui_navText, text);
-    lv_label_set_text(ui_navDirection, directions);
+#if defined(TTGO_TDISPLAY) || defined(WAVESHARE_S3_LCD_154) || defined(ESP32_TOUCH_LCD_35)
+    {
+        const char *d = directions != NULL ? directions : "";
+        static char dir_two_line[320];
+        if (d[0] && nav_split_ve_huong(d, dir_two_line, sizeof(dir_two_line))) {
+            lv_label_set_text(ui_navDirection, dir_two_line);
+        } else {
+            lv_label_set_text(ui_navDirection, d);
+        }
+    }
+#else
+    lv_label_set_text(ui_navDirection, directions != NULL ? directions : "");
+#endif
     lv_label_set_text(ui_navDistance, title);
 
 #endif
