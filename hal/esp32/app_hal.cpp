@@ -259,6 +259,9 @@ static void esp32_touch_power_handler(Button2 &btn)
 extern "C" {
 void ui_navScreen_screen_init(void);
 lv_obj_t *get_nav_screen(void);
+#ifdef ENABLE_APP_NAVIGATION
+void navigation_refresh_status_bar(const char *clock_hm, int notif_cnt, int call_cnt, bool ble_ok, uint8_t phone_batt_pct);
+#endif
 }
 
 ChronosESP32 watch("Chronos C3");
@@ -2579,11 +2582,15 @@ void hal_loop()
     }
 #endif
 
+    bool sec_tick = updateSeconds;
     if (updateSeconds)
     {
       updateSeconds = false;
       ui_update_seconds(watch.getSecond());
     }
+
+    lv_disp_t *display = lv_display_get_default();
+    lv_obj_t *actScr = lv_display_get_screen_active(display);
 
     if (ui_home == ui_clockScreen)
     {
@@ -2601,11 +2608,29 @@ void hal_loop()
 #endif
     else
     {
-      update_faces();
+#if defined(ESP32_TOUCH_LCD_35) && defined(ENABLE_APP_NAVIGATION)
+      /* Stop ticking watchface widgets while Navigation is top screen — avoids redraw/blend under Nav */
+      if (!(get_nav_screen() != nullptr && actScr == get_nav_screen()))
+#endif
+      {
+        update_faces();
+      }
     }
-
-    lv_disp_t *display = lv_display_get_default();
-    lv_obj_t *actScr = lv_display_get_screen_active(display);
+#if defined(ESP32_TOUCH_LCD_35) && defined(ENABLE_APP_NAVIGATION) && !defined(NAVIGATION_UI_LEGACY)
+    /* Nav V2 status bar: do not use sec_tick — updateSeconds is only set on CF_TIME sync, not every second */
+    if (get_nav_screen() != nullptr && actScr == get_nav_screen())
+    {
+      static uint32_t nav_status_last_ms = 0;
+      uint32_t now_ms = millis();
+      if (now_ms - nav_status_last_ms >= 1000U)
+      {
+        nav_status_last_ms = now_ms;
+        char tbuf[24];
+        snprintf(tbuf, sizeof(tbuf), "%02d : %02d", watch.getHourC(), watch.getMinute());
+        navigation_refresh_status_bar(tbuf, watch.getNotificationCount(), 0, watch.isConnected(), watch.getPhoneBattery());
+      }
+    }
+#endif
     if (actScr != ui_home)
     {
     }
@@ -2648,14 +2673,23 @@ void hal_loop()
         {
           ui_navScreen_screen_init();
         }
+#if defined(ESP32_TOUCH_LCD_35)
+        /* Instant opaque screen — fade blends watchface under Nav */
+        lv_screen_load(get_nav_screen());
+#else
         lv_screen_load_anim(get_nav_screen(), LV_SCR_LOAD_ANIM_FADE_IN, 500, 0, false);
+#endif
         gameActive = true;
         screenTimer.active = true;
       }
       if (actScr == get_nav_screen() && !nav.active && navSwitch && lastActScr != nullptr)
       {
         screenTimer.active = true;
+#if defined(ESP32_TOUCH_LCD_35)
+        lv_screen_load(lastActScr);
+#else
         lv_screen_load_anim(lastActScr, LV_SCR_LOAD_ANIM_FADE_OUT, 500, 0, false);
+#endif
       }
 #endif
       navIconState(nav.active && nav.hasIcon);

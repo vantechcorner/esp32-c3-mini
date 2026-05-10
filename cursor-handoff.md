@@ -45,7 +45,40 @@
 
 ## README công khai
 
-- Mục **Vietnamese fonts and ESP32 LVGL notes** + cập nhật bullet Screens (xem `README.md` đã commit).
+- Mục **Vietnamese fonts and ESP32 LVGL notes**, bullet Screens (Navigation Touch 3.5), **Building** (bảng env V2 vs legacy), **Waveshare ESP32-Touch-LCD-3.5 Navigation UI**, và ghi chú Windows khóa file `.pio` — xem `README.md`.
+
+## Changelog (cập nhật handoff)
+
+### 2026-05-10 — Navigation Touch 3.5: chọn UI V2 vs legacy qua PlatformIO
+
+- **Mục đích:** Build một firmware **Waveshare ESP32-Touch-LCD-3.5** nhưng chọn giao diện Navigation **V2** (status bar, hai cột, footer) hoặc **legacy** (bố cục chữ nhật kiểu Chronos: ETA + icon + title + hướng, giống tinh thần layout Waveshare 1.54").
+- **Cơ chế:** Macro `-D NAVIGATION_UI_LEGACY=1`. Khi **không** định nghĩa macro → **V2** (mặc định env `esp32_touch_lcd_3_5`).
+- **Env PlatformIO:**
+  - `esp32_touch_lcd_3_5` — Navigation **V2** (mặc định).
+  - `esp32_touch_lcd_3_5_nav_legacy` — extends env trên, thêm `NAVIGATION_UI_LEGACY=1`.
+- **Code:** `src/apps/navigation/navigation.c` (init + `navigateInfo`); `hal/esp32/app_hal.cpp` chỉ gọi refresh thanh trạng thái ~1 Hz khi **V2** (không legacy).
+- **README:** đã thêm mục ngắn trong phần Touch-LCD-3.5 / Building.
+
+### 2026-05-10 — ESP32-Touch-LCD-3.5: watchface “lọ” dưới Navigation + chữ đậm hơn (V2)
+
+- **Triệu chứng:** Cảm giác mặt đồng hồ vẫn hiện phía dưới màn Navigation khi chuyển màn.
+- **Xử lý (HAL + UI):** Không gọi `update_faces()` khi màn active là Navigation; dùng `lv_screen_load()` thay cho fade in/out trên board này; nền `ui_navScreen` opaque (`LV_OPA_COVER`).
+- **Đồng hồ trên status bar V2:** `navigation_refresh_status_bar` không chỉ dựa vào `sec_tick` — refresh ~1 Hz bằng `millis()` khi Nav là màn hiện tại (`hal_loop`).
+- **Typography (V2):** Montserrat 16 trên status; `vn_30` cho title/hướng; `vn_20` footer; tăng chiều cao hàng status/footer tương ứng.
+
+### 2026-05-10 — Windows: PlatformIO không ghi được `firmware.bin` / `.pio/build`
+
+- **Triệu chứng:** `The process cannot access the file` khi build/upload (thường `firmware.bin`, đôi khi `bootloader.bin`).
+- **Nguyên nhân:** Tiến trình khác giữ handle (Defender, indexer IDE, v.v.).
+- **Workaround:** Đóng app khóa file; loại trừ thư mục project hoặc `.pio` khỏi real-time scan; hoặc đổi ELF → BIN ra `%TEMP%` rồi `esptool write_flash` (bootloader `0x1000`, partitions `0x8000`, otadata `0xe000`, app `0x10000`) bằng Python của PlatformIO: `\.platformio\penv\Scripts\python.exe` + `tool-esptoolpy\esptool.py`, luôn `--chip esp32`.
+
+### 2026-05-09 — Navigation ESP32-Touch-LCD-3.5: hết clip đáy chữ chỉ dẫn
+
+- **Triệu chứng:** Dòng hướng dẫn rẽ (ví dụ *“4th exit”*) bị **mất vài hàng pixel ở mép dưới** — descender / đáy ký tự như bị cắt trong khung label.
+- **Nguyên nhân:** Trong `#elif defined(ESP32_TOUCH_LCD_35)` (`src/apps/navigation/navigation.c`), `ui_navDirection` dùng `lv_font_nav_vn_30` và hai dòng wrap, nhưng chiều cao được đặt `H - (ws35_icon_y + 170)`. Với màn landscape **H = 320** còn **~66 px**, không đủ cho hai dòng cỡ 30 → LVGL clip nội dung.
+- **Sửa:** Đồng bộ với padding dọc panel (`pad_top` / `pad_bottom` = 14) và vị trí `dir_top = ws35_icon_y + 126`:
+  - `lv_obj_set_height(ui_navDirection, H - ws35_pad_tb - ws35_pad_tb - dir_top)` (~**82 px** khi H = 320), lấp đầy vùng nội dung còn lại thay vì hằng số 170.
+- **Build / flash:** Env PlatformIO `esp32_touch_lcd_3_5`; upload ví dụ `pio run -e esp32_touch_lcd_3_5 -t upload --upload-port COM21` — đã verify flash OK (hash verified, hard reset).
 
 ## Lệnh generate font (nhắc nhanh)
 
@@ -60,3 +93,4 @@ Lặp với `--size 20` / `30` và tên file / fallback tương ứng.
 - Mở rộng subset Unicode nếu Maps/app gửi ký tự ngoài range (ví dụ dấu câu Unicode).
 - `LV_FONT_FMT_TXT_LARGE` nếu compiler báo font quá lớn.
 - Kiểm tra các màn khác vẫn dùng Montserrat thuần ASCII nếu cần tiếng Việt toàn app.
+- Navigation **bold** thật: generate thêm font từ `Montserrat-Bold.ttf` (lv_font_conv) nếu cần đồng bộ visual với V2.

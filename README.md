@@ -16,12 +16,23 @@ A demo LVGL Watch project for ESP32 C3 mini 240*240 touch display development bo
  - Control (Music Control, Find Phone, Bluetooth State) (Camera Capture)
  - QR Codes, Contacts
  - Games - Simon Says, Racing (Need to enable)
- - Navigation (Google Maps directions on ESP32); route strings use the same Vietnamese font subset (see [Vietnamese fonts](#vietnamese-fonts-and-esp32-lvgl-notes))
+ - Navigation (Google Maps directions on ESP32); route strings use the same Vietnamese font subset (see [Vietnamese fonts](#vietnamese-fonts-and-esp32-lvgl-notes)). On **Waveshare ESP32-Touch-LCD-3.5**, you can pick **Navigation V2** vs **legacy** rectangular UI via PlatformIO environment (see [below](#waveshare-esp32-touch-lcd-35-navigation-ui)).
  - Create custom apps with LVGL [sample](src/apps/sample/)
 
  ## Building
 
  Select your build environment in platformio.ini by uncommenting only one `default_envs`
+
+ **Waveshare ESP32-Touch-LCD-3.5 — Navigation UI:** same board, two firmware flavors:
+
+ | PlatformIO environment | Navigation UI |
+ |------------------------|----------------|
+ | `esp32_touch_lcd_3_5` | **V2** (status bar, two-column body, footer) — default |
+ | `esp32_touch_lcd_3_5_nav_legacy` | **Legacy** full-panel layout (ETA row + icon + title + directions), build flag `-D NAVIGATION_UI_LEGACY=1` |
+
+ Example: `pio run -e esp32_touch_lcd_3_5 -t upload` vs `pio run -e esp32_touch_lcd_3_5_nav_legacy -t upload` (add `--upload-port COMx` as needed).
+
+ On Windows, if the build fails with *cannot access* `.pio/build/.../firmware.bin`, another process is locking the file (antivirus, IDE). Close lockers, exclude the project folder from real-time scanning, or flash from `firmware.elf` using the PlatformIO bundled `esptool.py` and `write_flash` at the usual offsets for your partition table.
 
  When building for native check that you have configured SDL according to your platform. Follow the instructions here
  https://github.com/lvgl/lv_platformio?tab=readme-ov-file#install-sdl-drivers
@@ -135,4 +146,13 @@ Repeat for `--size 20` / `30` and matching output names and `--lv-fallback`.
 For [`ESP32_TOUCH_LCD_35`](hal/esp32/displays/pins.h), the LCD power/reset lines are gated by a `TCA9554` IO expander. The display driver initializes `TCA9554` (`0x20`) and enables `P0..P2` **before** `gfx->begin()` in [`hal/esp32/displays/esp32_touch_lcd_35.hpp`](hal/esp32/displays/esp32_touch_lcd_35.hpp).
 
 If this step is skipped, the board may show **backlight on but no image** (black screen), even though BLE still works.
+
+### Waveshare ESP32-Touch-LCD-3.5 Navigation UI
+
+Navigation layout for this board is selected at **compile time** (see [Building](#building)):
+
+- **`esp32_touch_lcd_3_5`** — **Navigation V2**: landscape layout with a status row (clock, notification/call badges, battery, Bluetooth), main content column plus map/icon column, and a footer line for remaining distance.
+- **`esp32_touch_lcd_3_5_nav_legacy`** — **Legacy** Chronos-style rectangular screen: single column with ETA text, turn icon, route title, and directions (similar spirit to the smaller rectangular Navigation layouts on other boards).
+
+Implementation: [`src/apps/navigation/navigation.c`](src/apps/navigation/navigation.c); macro `NAVIGATION_UI_LEGACY` gates the legacy branch. Status-bar refresh in [`hal/esp32/app_hal.cpp`](hal/esp32/app_hal.cpp) applies only to **V2**, not legacy.
 

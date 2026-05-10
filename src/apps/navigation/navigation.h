@@ -34,6 +34,10 @@ void ui_app_exit(void);
     void ui_navScreen_screen_init();
 
     void navigateInfo(const char* text, const char* title, const char *directions);
+#ifdef ENABLE_APP_NAVIGATION
+    /** Status row on Navigation V2 (ESP32-Touch-LCD-3.5, build without NAVIGATION_UI_LEGACY); no-op otherwise */
+    void navigation_refresh_status_bar(const char *clock_hm, int notif_cnt, int call_cnt, bool ble_ok, uint8_t phone_batt_pct);
+#endif
     void navIconState(bool show);
     void setNavIconPx(uint16_t x, uint16_t y, bool on);
 
