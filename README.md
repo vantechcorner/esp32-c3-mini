@@ -1,6 +1,6 @@
 # esp32-c3-mini
 
-ESP32 firmware (ESP32-S3, ESP32-C3, ESP32 Classic) focused on **Google Maps navigation**, with **time** and **weather** sync. Companion Android app: [VanTC-Navi](https://github.com/vantechcorner/vantc-navi).
+ESP32 firmware (ESP32-S3, ESP32-C3, ESP32 Classic) focused on **Google Maps navigation**, with **time** and **weather** sync **via BLE and WiFi**. Companion Android app: [VanTC-Navi](https://github.com/vantechcorner/vantc-navi).
 
 **Tiếng Việt:** [readme-vn.md](readme-vn.md)
 
@@ -16,7 +16,7 @@ This fork emphasizes navigation, time, and weather on selected boards. For the *
 ## Core features (this fork)
 
 - **Navigation** — turn-by-turn data from Google Maps (via phone app)
-- **Time & weather** — synced from the companion app
+- **Time & weather** — synced from the companion app via **BLE** or **WiFi**
 - **Transport** — BLE (standard) or **WiFi TCP** (optional, for devices without reliable BLE)
 
 ## Supported hardware (focus)
@@ -32,20 +32,72 @@ This fork emphasizes navigation, time, and weather on selected boards. For the *
 
 ### Waveshare ESP32-Touch-LCD-3.5 — Navigation UI
 
+On the **3.5"** board (320×480), navigation layout is chosen at **compile time** in [`src/apps/navigation/navigation.c`](src/apps/navigation/navigation.c):
+
 | PlatformIO environment | Navigation UI |
 |------------------------|---------------|
-| `esp32_touch_lcd_3_5` | **V2** (status bar with clock, two-column body, trip row) — default |
-| `esp32_touch_lcd_3_5_nav_legacy` | **Legacy** (ETA row + icon + title + directions), `-D NAVIGATION_UI_LEGACY=1` |
+| `esp32_touch_lcd_3_5` | **Navigation V2** (default) — landscape: status bar (**clock**), icon column + instruction column, trip row (duration / distance / ETA time), progress bar placeholder |
+| `esp32_touch_lcd_3_5_wifi` | Same **V2** UI as above, with WiFi transport |
+| `esp32_touch_lcd_3_5_nav_legacy` | **Legacy** — Chronos-style full panel: ETA row + turn icon + title + directions (`-D NAVIGATION_UI_LEGACY=1`) |
 
-## Build and flash
+WiFi build for this board requires **16 MB** flash (`esp32_touch_lcd_3_5_wifi`). Status-bar clock refresh runs only on **V2**, not legacy.
 
-Pick the env for your board in [`platformio.ini`](platformio.ini) (set `default_envs` or pass `-e`).
+## Building with PlatformIO
+
+### Prerequisites
+
+- [PlatformIO](https://platformio.org/) (CLI or [VS Code extension](https://platformio.org/install/ide?install=vscode))
+- USB cable and the correct serial driver for your board (CP210x, CH9102, etc.)
+- Clone this repo and open the project folder
+
+### 1. Choose an environment
+
+Each board has a PlatformIO **environment** (`env`) in [`platformio.ini`](platformio.ini). Either:
+
+- Uncomment one line under `default_envs = ...` at the top of `platformio.ini`, **or**
+- Pass `-e <env_name>` on every command (recommended when switching boards)
+
+Examples:
+
+| Board | BLE | WiFi |
+|-------|-----|------|
+| Touch LCD 3.5" | `esp32_touch_lcd_3_5` | `esp32_touch_lcd_3_5_wifi` |
+| S3 Touch 1.28" | `lolin_s3_mini_1_28` | `lolin_s3_mini_1_28_wifi` |
+| TTGO T-Display | `ttgo_tdisplay` | `ttgo_tdisplay_wifi` |
+
+### 2. Build only
+
+```bash
+pio run -e esp32_touch_lcd_3_5
+```
+
+First build downloads toolchains and libraries; it can take several minutes.
+
+### 3. Upload (flash)
+
+Connect the board, find the COM port (`pio device list` on CLI), then:
+
+```bash
+pio run -e esp32_touch_lcd_3_5_wifi -t upload --upload-port COM21
+```
+
+Build + upload in one step (omit `-t upload` if you only built already):
 
 ```bash
 pio run -e ttgo_tdisplay_wifi -t upload --upload-port COM12
 ```
 
-On Windows, if upload fails with *cannot access* `firmware.bin`, close programs locking `.pio/build/` or exclude the project from antivirus real-time scan.
+### 4. Serial monitor (optional)
+
+```bash
+pio device monitor -p COM12 -b 115200
+```
+
+### Troubleshooting
+
+- **Wrong firmware on wrong hardware** — e.g. `esp32_touch_lcd_3_5*` on TTGO → black screen or boot loop; use the env from the [hardware table](#supported-hardware-focus).
+- **Windows: cannot access `firmware.bin`** — antivirus or another process locks `.pio/build/`; close lockers or exclude the project folder.
+- **Touch LCD 3.5: backlight on, no image** — see [bring-up note](#waveshare-esp32-touch-lcd-35-bring-up-note) (TCA9554 IO expander).
 
 ## VanTC-Navi
 

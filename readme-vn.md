@@ -1,6 +1,6 @@
 # esp32-c3-mini
 
-Firmware ESP32 (ESP32-S3, ESP32-C3, ESP32 Classic) tập trung **điều hướng Google Maps**, đồng bộ **thời gian** và **thời tiết**. App Android đồng hành: [VanTC-Navi](https://github.com/vantechcorner/vantc-navi).
+Firmware ESP32 (ESP32-S3, ESP32-C3, ESP32 Classic) tập trung **điều hướng Google Maps**, đồng bộ **thời gian** và **thời tiết** **qua BLE và WiFi**. App Android đồng hành: [VanTC-Navi](https://github.com/vantechcorner/vantc-navi).
 
 **English:** [README.md](README.md)
 
@@ -16,7 +16,7 @@ Fork này ưu tiên điều hướng, giờ và thời tiết trên các board �
 ## Tính năng chính (fork này)
 
 - **Điều hướng** — dữ liệu lộ trình từ Google Maps (qua app trên điện thoại)
-- **Thời gian & thời tiết** — đồng bộ từ app đồng hành
+- **Thời gian & thời tiết** — đồng bộ từ app đồng hành qua **BLE** hoặc **WiFi**
 - **Kết nối** — BLE (chuẩn) hoặc **WiFi TCP** (tùy chọn, cho thiết bị không có BLE ổn định)
 
 ## Phần cứng hỗ trợ (tập trung)
@@ -32,20 +32,70 @@ Fork này ưu tiên điều hướng, giờ và thời tiết trên các board �
 
 ### Waveshare ESP32-Touch-LCD-3.5 — giao diện Navigation
 
+Trên board **3.5 inch** (320×480), layout Navigation chọn lúc **biên dịch** trong [`src/apps/navigation/navigation.c`](src/apps/navigation/navigation.c):
+
 | Môi trường PlatformIO | Giao diện Navigation |
 |------------------------|---------------------|
-| `esp32_touch_lcd_3_5` | **V2** (thanh trạng thái có đồng hồ, hai cột nội dung, hàng trip) — mặc định |
-| `esp32_touch_lcd_3_5_nav_legacy` | **Legacy** (hàng ETA + icon + title + hướng), `-D NAVIGATION_UI_LEGACY=1` |
+| `esp32_touch_lcd_3_5` | **Navigation V2** (mặc định) — ngang: thanh trạng thái (**đồng hồ**), cột icon + cột hướng dẫn, hàng trip (thời lượng / quãng đường / giờ đến), thanh tiến độ (placeholder) |
+| `esp32_touch_lcd_3_5_wifi` | Cùng **V2** như trên, kèm WiFi transport |
+| `esp32_touch_lcd_3_5_nav_legacy` | **Legacy** — toàn màn hình kiểu Chronos: hàng ETA + icon rẽ + title + hướng (`-D NAVIGATION_UI_LEGACY=1`) |
 
-## Build và nạp firmware
+Bản WiFi cần flash **16 MB** (`esp32_touch_lcd_3_5_wifi`). Làm mới đồng hồ trên thanh trạng thái chỉ có trên **V2**, không có trên legacy.
 
-Chọn env đúng board trong [`platformio.ini`](platformio.ini) (đặt `default_envs` hoặc truyền `-e`).
+## Build với PlatformIO
+
+### Yêu cầu
+
+- [PlatformIO](https://platformio.org/) (CLI hoặc [extension VS Code](https://platformio.org/install/ide?install=vscode))
+- Cáp USB và driver serial đúng cho board (CP210x, CH9102, …)
+- Clone repo và mở thư mục project
+
+### 1. Chọn environment
+
+Mỗi board có một **environment** (`env`) trong [`platformio.ini`](platformio.ini):
+
+- Bỏ comment một dòng `default_envs = ...` ở đầu file, **hoặc**
+- Luôn truyền `-e <tên_env>` (nên dùng khi đổi board)
+
+| Board | BLE | WiFi |
+|-------|-----|------|
+| Touch LCD 3.5" | `esp32_touch_lcd_3_5` | `esp32_touch_lcd_3_5_wifi` |
+| S3 Touch 1.28" | `lolin_s3_mini_1_28` | `lolin_s3_mini_1_28_wifi` |
+| TTGO T-Display | `ttgo_tdisplay` | `ttgo_tdisplay_wifi` |
+
+### 2. Chỉ build
+
+```bash
+pio run -e esp32_touch_lcd_3_5
+```
+
+Lần build đầu tải toolchain và thư viện; có thể mất vài phút.
+
+### 3. Nạp firmware (upload)
+
+Cắm board, xem cổng COM (`pio device list`), rồi:
+
+```bash
+pio run -e esp32_touch_lcd_3_5_wifi -t upload --upload-port COM21
+```
+
+Build + nạp một lệnh:
 
 ```bash
 pio run -e ttgo_tdisplay_wifi -t upload --upload-port COM12
 ```
 
-Trên Windows, nếu lỗi *cannot access* `firmware.bin`, đóng chương trình khóa `.pio/build/` hoặc loại trừ thư mục project khỏi quét antivirus.
+### 4. Serial monitor (tùy chọn)
+
+```bash
+pio device monitor -p COM12 -b 115200
+```
+
+### Xử lý sự cố
+
+- **Sai firmware trên sai phần cứng** — ví dụ `esp32_touch_lcd_3_5*` trên TTGO → màn đen hoặc boot loop; dùng env đúng [bảng phần cứng](#phần-cứng-hỗ-trợ-tập-trung).
+- **Windows: cannot access `firmware.bin`** — antivirus hoặc process khóa `.pio/build/`.
+- **Touch LCD 3.5: có đèn nền, không hình** — xem [ghi chú bring-up](#ghi-chú-bring-up-waveshare-esp32-touch-lcd-35) (TCA9554).
 
 ## VanTC-Navi
 

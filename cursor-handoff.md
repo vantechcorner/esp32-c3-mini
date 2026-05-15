@@ -1,101 +1,123 @@
 # Cursor handoff — esp32-c3-mini
 
+Tài liệu nội bộ cho agent/dev tiếp theo. Docs công khai: [`README.md`](README.md) (EN), [`readme-vn.md`](readme-vn.md) (VI).
+
+## Mục tiêu fork (2026)
+
+- **Điều hướng Google Maps** trên ESP32 (S3 / C3 / Classic), đồng bộ **thời gian + thời tiết** qua **BLE hoặc WiFi**.
+- App Android: **[VanTC-Navi](https://github.com/vantechcorner/vantc-navi)** (gói Chronos-compatible).
+- **Đủ tính năng đồng hồ** (notifications, music, watchfaces, …): khuyến nghị user dùng **upstream** [fbiego/esp32-c3-mini](https://github.com/fbiego/esp32-c3-mini) + app **[Chronos](https://chronos.ke/app?id=c3-mini)** qua BLE.
 
 ## Stack
 
-- **LVGL** 9.x (`lib_deps = lvgl/lvgl@9.3.0`), `include/lv_conf.h`
-- **ESP32** qua PlatformIO; ví dụ env: `lolin_s3_mini_1_28` (Waveshare S3 1.28" tròn)
+- **LVGL** 9.x (`lvgl/lvgl@9.3.0`), `include/lv_conf.h`
+- **PlatformIO** + **ChronosESP32** (`watch` trong `hal/esp32/app_hal.cpp`)
+- **HAL:** `hal/esp32/app_hal.cpp`, display per-board trong `hal/esp32/displays/`
 
-## Tiếng Việt (glyph Montserrat mặc định thiếu)
+## Phần cứng đang tập trung — bảng env
 
-- Font bitmap custom (Montserrat Regular, **plain** / `--no-compress`, `bpp=4`, LVGL 9):
-  - `src/apps/navigation/lv_font_nav_vn_16.c`
-  - `src/apps/navigation/lv_font_nav_vn_20.c`
-  - `src/apps/navigation/lv_font_nav_vn_30.c`
-- Unicode ranges khi generate: `0x20-0x7F,0xA0-0xFF,0x100-0x24F,0x1EA0-0x1EFF` + `--lv-fallback lv_font_montserrat_*` cùng size.
-- **Không** dùng font nén nếu `LV_USE_FONT_COMPRESSED == 0` — sẽ crash/assert khi vẽ.
-- TTF nguồn: `support/fonts/Montserrat-Regular.ttf` (pattern `support/fonts/Montserrat*.ttf` trong `.gitignore`).
+| Thiết bị | BLE | WiFi (`ENABLE_WIFI_TRANSPORT`) | Ghi chú |
+|----------|-----|--------------------------------|---------|
+| Waveshare **ESP32-S3-Touch-LCD-1.28** | `lolin_s3_mini_1_28` | `lolin_s3_mini_1_28_wifi` | 16 MB, tròn 240×240 |
+| Waveshare **ESP32-S3-LCD-1.54** | `waveshare_s3_lcd_1_54` | — chưa có | |
+| Waveshare **ESP32-Touch-LCD-3.5** | `esp32_touch_lcd_3_5` | `esp32_touch_lcd_3_5_wifi` | **16 MB** bắt buộc cho WiFi env; Navigation **V2** |
+| LilyGo **TTGO T-Display** (Classic) | `ttgo_tdisplay` | `ttgo_tdisplay_wifi` | **4 MB** flash; ST7789 135×240; **không** dùng env `esp32_touch_lcd_3_5*` |
 
-### Gán font trong code
+**Lệnh build/flash mẫu:**
 
-- `src/apps/navigation/navigation.c`: `LV_FONT_DECLARE`, label dùng `lv_font_nav_vn_16/20/30`; đã chỉnh `y` icon (≈76) và cỡ chữ (ETA nhỏ hơn, dòng hướng lớn hơn), `LV_LABEL_LONG_WRAP` cho hướng đi.
-- `src/ui/ui.c`: `LV_FONT_DECLARE(lv_font_nav_vn_16)` + style cho notification list/detail + `ui_alertText`.
+```bash
+pio run -e lolin_s3_mini_1_28_wifi -t upload --upload-port COM6
+pio run -e esp32_touch_lcd_3_5_wifi -t upload --upload-port COM21
+pio run -e ttgo_tdisplay_wifi -t upload --upload-port COM12
+```
 
-## Thông báo / BLE — stack NimBLE
+`platformio.ini`: `esp32_touch_lcd_3_5_wifi` có `upload_port = COM21` (đổi nếu cần). Rule Cursor: `.cursor/rules/touch-lcd-firmware-flash.mdc` — sau sửa firmware Touch LCD WiFi nên `pio run -t upload`.
 
-- `notificationCallback` (Chronos / NimBLE **host task**) **không** được gọi `showAlert()` / LVGL.
-- `hal/esp32/app_hal.cpp`: cờ `pendingNotificationAlert`, set trong callback; `showAlert()` gọi trong `hal_loop()` **sau** `lv_timer_handler()`.
-- Log dài trong callback: tránh `Timber.d(full_message)` trên stack nhỏ; có thể log `message.length()` thôi.
+## WiFi TCP transport
 
-## LVGL 9 — buffer màn hình phải căn chỉnh
+- **Mục đích:** Thiết bị/Android không có BLE ổn định; phone = hotspot + TCP **8423**, ESP = STA + client `gateway:8423`.
+- **Packet:** `[2-byte BE length][Chronos payload]` → inject `ChronosESP32` (`hal/esp32/wifi_transport.cpp`, `chronos_inject` → `_incomingData` + `dataReceived()`).
+- **NVS:** `wifi_ssid`, `wifi_pass`, `wifi_en` (defaults trong `wifi_transport.cpp`, ví dụ `CarLinkAP467` / `carlink324`).
+- **BLE tắt khi WiFi:** `btStop()`, skip `watch.begin()`; `isPhoneConnected()` = BLE **hoặc** `wifi_transport_connected()`.
+- **Init order:** `wifi_transport_early_init()` ngay sau `prefs.begin()` → display init → `btStop()` (nếu WiFi) → `wifi_transport_loop()` trong `hal_loop()`. WiFi **trước** NimBLE để tránh `BLE_INIT: Malloc failed` trên S3.
+- **Env WiFi hiện có:** `lolin_s3_mini_1_28_wifi`, `esp32_touch_lcd_3_5_wifi`, `ttgo_tdisplay_wifi`.
 
-- `hal/esp32/app_hal.cpp`: `lvBuffer` và `rotated_buf` (SW_ROTATION) dùng `__attribute__((aligned(32)))` + `lvBuffer` là `static`.
-- Assert: `buf1 == lv_draw_buf_align(buf1, cf)` nếu địa chỉ mảng global lệch sau các object khác.
+## Navigation — ESP32-Touch-LCD-3.5 (V2)
 
-## ESP32-Touch-LCD-3.5 — LCD enable qua TCA9554 (quan trọng)
+- **Macro:** Không có `NAVIGATION_UI_LEGACY` → **V2** (`esp32_touch_lcd_3_5`, `esp32_touch_lcd_3_5_wifi`). Legacy: `esp32_touch_lcd_3_5_nav_legacy`.
+- **Layout V2** (`navigation.c`, `#if ESP32_TOUCH_LCD_35 && !NAVIGATION_UI_LEGACY`):
+  - Status bar: **chỉ đồng hồ** (đã bỏ net OK / badge khác).
+  - Cột trái: `ui_navV2_map_box` (nền đen `#000000`, viền xám `#5F6368`) + canvas icon 48×48.
+  - Cột phải: `ui_navTitle` (xanh), `ui_navDirection` (wrap, tách 2 dòng nếu có *"về hướng"*).
+  - Hàng trip 3 cột: duration / distance / ETA (**chỉ giờ** `HH:MM`, bỏ chữ "Dự kiến").
+  - Progress bar placeholder (chưa có field từ app).
+- **Trip row — nguồn dữ liệu (quan trọng):** Không parse `navText` newline nữa. Sau `navigateInfo(...)`, HAL gọi `navigation_ws35_set_trip_row(nav.eta, nav.duration, nav.distance)` (`app_hal.cpp`). ETA qua `nav_ws35_format_eta_time()` tìm `HH:MM` trong chuỗi app.
+- **Status clock:** `navigation_refresh_status_bar()` ~1 Hz từ `hal_loop` khi Nav là màn active (`millis()`, không chỉ `sec_tick`).
+- **HAL Nav:** Không `update_faces()` khi Nav top; `lv_screen_load` instant (không fade) trên Touch 3.5.
 
-- Với `ESP32_TOUCH_LCD_35`, panel ST7796 có thể bị trạng thái **backlight sáng nhưng màn đen** sau một số lần flash/reset nếu không bật IO expander trước init LCD.
-- `hal/esp32/displays/esp32_touch_lcd_35.hpp` đã thêm bước:
-  - `Wire.begin(I2C_SDA, I2C_SCL);`
-  - cấu hình `TCA9554 @ 0x20`: register `0x03 = 0xF8` (P0..P2 output),
-  - kéo mức thấp ngắn (`0x01 = 0x00`) rồi bật P0..P2 (`0x01 = 0x07`),
-  - sau đó mới gọi `gfx->begin()`.
-- Ghi chú: cấu hình này bám theo hướng init của demo hãng Waveshare cho dòng `ESP32-Touch-LCD-3.5`.
-- Nếu gặp lại hiện tượng màn đen nhưng vẫn BLE pair được, kiểm tra đầu tiên là sequence enable TCA9554 này.
+## Navigation — các board khác
 
-## README công khai
+- **TTGO / 1.54 / mặc định:** layout chữ nhật / cột trái icon; `my_touchpad_read` dùng `isPhoneConnected()` cho remote touch (WiFi mode).
+- **Legacy Touch 3.5:** một cột ETA + icon + title + directions.
 
-- Mục **Vietnamese fonts and ESP32 LVGL notes**, bullet Screens (Navigation Touch 3.5), **Building** (bảng env V2 vs legacy), **Waveshare ESP32-Touch-LCD-3.5 Navigation UI**, và ghi chú Windows khóa file `.pio` — xem `README.md`.
+## Tiếng Việt (font)
 
-## Changelog (cập nhật handoff)
+- Font bitmap: `lv_font_nav_vn_16/20/30.c` — generate từ Montserrat, `--no-compress`, `bpp=4`.
+- Range: `0x20-0x7F,0xA0-0xFF,0x100-0x24F,0x1EA0-0x1EFF`. TTF nguồn: `support/fonts/` (gitignore `*.ttf`).
+- `navigation.c` + `ui.c` (notifications). Runtime **không** load TTF từ `support/`.
 
-### 2026-05-13 — WiFi TCP transport cho ESP32-S3-1.28 và ESP32-Touch-LCD-3.5
+## BLE / NimBLE
 
-- **Mục đích:** Thêm kênh truyền dữ liệu qua WiFi (time, navigation, weather) để dùng với các đầu Android (OLEDPRO X4S Eco) chỉ hỗ trợ Bluetooth serial mà không có BLE → app Chronos gốc không chạy được.
-- **Kiến trúc:** Android = WiFi AP + TCP server port **8423**. ESP32 = WiFi STA + TCP client → gateway:8423. Packet TCP: `[2-byte BE length][Chronos payload]`, payload giống hệt BLE.
-- **Injection vào ChronosESP32:** File `hal/esp32/wifi_transport.cpp` đọc TCP packet, inject trực tiếp vào `_incomingData` + gọi `dataReceived()` → tất cả callback/getter hiện có (navigation, weather, time) hoạt động không cần sửa.
-- **Cấu hình WiFi:** Preferences NVS — `wifi_ssid`, `wifi_pass`, `wifi_en` (bool). Đặt trước bằng serial/code, ESP32 tự kết nối AP khi khởi động nếu `wifi_en == true`.
-- **BLE tắt khi WiFi:** `btStop()` gọi trước display init khi `ENABLE_WIFI_TRANSPORT` → giải phóng ~40 KB heap cho WiFi driver. `watch.begin()` bị skip, `sendCommand()` là no-op an toàn (`_inited == false`). `isPhoneConnected()` trả `true` nếu BLE hoặc WiFi connected.
-- **Init order (quan trọng):** `wifi_transport_early_init()` (WiFi radio) → display init → `btStop()` + skip `watch.begin()` → `wifi_transport_init()` (no-op). WiFi phải init **trước** BLE/NimBLE, nếu không ESP32-S3 crash do hết heap (`BLE_INIT: Malloc failed`).
-- **Env PlatformIO:**
-  - `lolin_s3_mini_1_28_wifi` — ESP32-S3 1.28" + WiFi (RAM 34.6%, Flash 88.8%)
-  - `esp32_touch_lcd_3_5_wifi` — ESP32 Classic 3.5" + WiFi (RAM 35.1%, Flash 31.7%)
-- **Files thay đổi:**
-  - `hal/esp32/wifi_transport.h` / `.cpp` — WiFi STA + TCP read loop + Chronos injection; `wifi_transport_early_init()` gọi trước BLE
-  - `hal/esp32/app_hal.cpp` — `#include wifi_transport.h`, `wifi_transport_early_init()` ngay sau `prefs.begin()`, `btStop()` + skip `watch.begin()`, `wifi_transport_loop()` trong `hal_loop()`, helper `isPhoneConnected()`, guard `watch.getAddress()` cho WiFi mode
-  - `platformio.ini` — 2 env mới
-- **Android app:** `D:\Github\vantc-navi` — hỗ trợ BLE + WiFi, chọn mode trong UI.
+- `notificationCallback`: không gọi LVGL; `pendingNotificationAlert` → `showAlert()` trong `hal_loop()` sau `lv_timer_handler()`.
 
-### 2026-05-10 — Navigation Touch 3.5: chọn UI V2 vs legacy qua PlatformIO
+## LVGL 9
 
-- **Mục đích:** Build một firmware **Waveshare ESP32-Touch-LCD-3.5** nhưng chọn giao diện Navigation **V2** (status bar, hai cột, footer) hoặc **legacy** (bố cục chữ nhật kiểu Chronos: ETA + icon + title + hướng, giống tinh thần layout Waveshare 1.54").
-- **Cơ chế:** Macro `-D NAVIGATION_UI_LEGACY=1`. Khi **không** định nghĩa macro → **V2** (mặc định env `esp32_touch_lcd_3_5`).
-- **Env PlatformIO:**
-  - `esp32_touch_lcd_3_5` — Navigation **V2** (mặc định).
-  - `esp32_touch_lcd_3_5_nav_legacy` — extends env trên, thêm `NAVIGATION_UI_LEGACY=1`.
-- **Code:** `src/apps/navigation/navigation.c` (init + `navigateInfo`); `hal/esp32/app_hal.cpp` chỉ gọi refresh thanh trạng thái ~1 Hz khi **V2** (không legacy).
-- **README:** đã thêm mục ngắn trong phần Touch-LCD-3.5 / Building.
+- `lvBuffer` (+ `rotated_buf` nếu có): `__attribute__((aligned(32)))`.
 
-### 2026-05-10 — ESP32-Touch-LCD-3.5: watchface “lọ” dưới Navigation + chữ đậm hơn (V2)
+## ESP32-Touch-LCD-3.5 — TCA9554 (màn đen, có backlight)
 
-- **Triệu chứng:** Cảm giác mặt đồng hồ vẫn hiện phía dưới màn Navigation khi chuyển màn.
-- **Xử lý (HAL + UI):** Không gọi `update_faces()` khi màn active là Navigation; dùng `lv_screen_load()` thay cho fade in/out trên board này; nền `ui_navScreen` opaque (`LV_OPA_COVER`).
-- **Đồng hồ trên status bar V2:** `navigation_refresh_status_bar` không chỉ dựa vào `sec_tick` — refresh ~1 Hz bằng `millis()` khi Nav là màn hiện tại (`hal_loop`).
-- **Typography (V2):** Montserrat 16 trên status; `vn_30` cho title/hướng; `vn_20` footer; tăng chiều cao hàng status/footer tương ứng.
+- LCD enable qua **TCA9554 @ 0x20** trước `gfx->begin()` — `hal/esp32/displays/esp32_touch_lcd_35.hpp` (P0..P2). Thiếu bước này → backlight sáng, màn đen, BLE/WiFi vẫn có thể OK.
 
-### 2026-05-10 — Windows: PlatformIO không ghi được `firmware.bin` / `.pio/build`
+## Pitfall đã gặp
 
-- **Triệu chứng:** `The process cannot access the file` khi build/upload (thường `firmware.bin`, đôi khi `bootloader.bin`).
-- **Nguyên nhân:** Tiến trình khác giữ handle (Defender, indexer IDE, v.v.).
-- **Workaround:** Đóng app khóa file; loại trừ thư mục project hoặc `.pio` khỏi real-time scan; hoặc đổi ELF → BIN ra `%TEMP%` rồi `esptool write_flash` (bootloader `0x1000`, partitions `0x8000`, otadata `0xe000`, app `0x10000`) bằng Python của PlatformIO: `\.platformio\penv\Scripts\python.exe` + `tool-esptoolpy\esptool.py`, luôn `--chip esp32`.
+| Triệu chứng | Nguyên nhân | Cách xử lý |
+|-------------|-------------|------------|
+| Boot loop `Detected size(4096k) smaller than ... 16384k` | Nạp `esp32_touch_lcd_3_5_wifi` lên **TTGO 4 MB** | Dùng `ttgo_tdisplay_wifi` |
+| Màn đen sau flash | Sai env / sai driver; hoặc TCA9554 chưa enable | Đúng env; xem TCA9554 |
+| ETA cột 3 sai / thiếu | Parse `navText` khi `distance` rỗng | Dùng `navigation_ws35_set_trip_row` từ field riêng |
+| Windows build fail | Lock `.pio/build/firmware.bin` | Defender exclude; đóng IDE lock file |
 
-### 2026-05-09 — Navigation ESP32-Touch-LCD-3.5: hết clip đáy chữ chỉ dẫn
+## Repo / gitignore
 
-- **Triệu chứng:** Dòng hướng dẫn rẽ (ví dụ *“4th exit”*) bị **mất vài hàng pixel ở mép dưới** — descender / đáy ký tự như bị cắt trong khung label.
-- **Nguyên nhân:** Trong `#elif defined(ESP32_TOUCH_LCD_35)` (`src/apps/navigation/navigation.c`), `ui_navDirection` dùng `lv_font_nav_vn_30` và hai dòng wrap, nhưng chiều cao được đặt `H - (ws35_icon_y + 170)`. Với màn landscape **H = 320** còn **~66 px**, không đủ cho hai dòng cỡ 30 → LVGL clip nội dung.
-- **Sửa:** Đồng bộ với padding dọc panel (`pad_top` / `pad_bottom` = 14) và vị trí `dir_top = ws35_icon_y + 126`:
-  - `lv_obj_set_height(ui_navDirection, H - ws35_pad_tb - ws35_pad_tb - dir_top)` (~**82 px** khi H = 320), lấp đầy vùng nội dung còn lại thay vì hằng số 170.
-- **Build / flash:** Env PlatformIO `esp32_touch_lcd_3_5`; upload ví dụ `pio run -e esp32_touch_lcd_3_5 -t upload --upload-port COM21` — đã verify flash OK (hash verified, hard reset).
+- Ignore: `/firmware/`, `/test/`, `.cursor/rules/`, `support/**/*.zip`, `support/**/*.txt`, `support/fonts/*.ttf`.
+- **Giữ trong git:** `support/*.py` (PlatformIO `header_gen.py`, `hardware_build_extra.py`, …).
+
+## Changelog handoff
+
+### 2026-05-15 — README song ngữ, TTGO WiFi, Navigation V2 fixes
+
+- **README.md** (EN) + **readme-vn.md** (VI): tập trung navigation/time/weather; bảng env; PlatformIO build; khuyến nghị upstream+Chronos; giữ mục WiFi / font VN / TCA9554.
+- **Env `ttgo_tdisplay_wifi`:** 4 MB, `TTGO_TDISPLAY`, `ENABLE_WIFI_TRANSPORT`.
+- **Navigation V2 Touch 3.5:** `navigation_ws35_set_trip_row`; `nav_ws35_format_eta_time` (HH:MM); status bar chỉ clock; `ui_navV2_map_box` nền đen + viền; bỏ nhãn "ETA" cột 3.
+- **Remote touch:** `isPhoneConnected()` thay `watch.isConnected()` trong `my_touchpad_read`.
+- **Flash:** TTGO phải `ttgo_tdisplay_wifi`, không `esp32_touch_lcd_3_5_wifi`.
+
+### 2026-05-13 — WiFi TCP (S3 1.28 + Touch 3.5)
+
+- `wifi_transport.cpp` / env `lolin_s3_mini_1_28_wifi`, `esp32_touch_lcd_3_5_wifi`.
+- Init order WiFi trước BLE; `btStop()` khi WiFi mode.
+
+### 2026-05-10 — Navigation V2 vs legacy (Touch 3.5)
+
+- `NAVIGATION_UI_LEGACY` → `esp32_touch_lcd_3_5_nav_legacy`.
+- V2: status, 2 cột, footer/trip; không `update_faces` dưới Nav.
+
+## Việc có thể làm tiếp
+
+- Env **`waveshare_s3_lcd_1_54_wifi`** nếu cần WiFi trên 1.54".
+- WiFi: UI cài SSID trên watch; icon WiFi trên status (V2 đã bỏ badge — cân nhắc lại nếu cần).
+- Navigation progress bar khi app gửi field progress.
+- `Montserrat-Bold` cho title Nav nếu cần đậm hơn.
 
 ## Lệnh generate font (nhắc nhanh)
 
@@ -103,12 +125,4 @@
 npx lv_font_conv --font support/fonts/Montserrat-Regular.ttf -r 0x20-0x7F,0xA0-0xFF,0x100-0x24F,0x1EA0-0x1EFF --size 16 --bpp 4 --format lvgl --no-compress -o src/apps/navigation/lv_font_nav_vn_16.c --lv-font-name lv_font_nav_vn_16 --lv-fallback lv_font_montserrat_16
 ```
 
-Lặp với `--size 20` / `30` và tên file / fallback tương ứng.
-
-## Việc có thể làm tiếp
-
-- Mở rộng subset Unicode nếu Maps/app gửi ký tự ngoài range (ví dụ dấu câu Unicode).
-- `LV_FONT_FMT_TXT_LARGE` nếu compiler báo font quá lớn.
-- Kiểm tra các màn khác vẫn dùng Montserrat thuần ASCII nếu cần tiếng Việt toàn app.
-- Navigation **bold** thật: generate thêm font từ `Montserrat-Bold.ttf` (lv_font_conv) nếu cần đồng bộ visual với V2.
-- **WiFi transport:** UI cài đặt SSID/password trên watch (hiện phải đặt qua NVS/code); hiển thị icon WiFi trên status bar khi kết nối WiFi; hỗ trợ mDNS thay hardcode gateway.
+Lặp `--size 20` / `30` với tên file và `--lv-fallback` tương ứng.
