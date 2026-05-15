@@ -43,6 +43,7 @@
 #endif
 
 #include "feedback.h"
+#include "wifi_transport.h"
 
 #include <lvgl.h>
 #include "ui/ui.h"
@@ -276,6 +277,15 @@ GyroData gyro;
 
 static const uint32_t screenWidth = SCREEN_WIDTH;
 static const uint32_t screenHeight = SCREEN_HEIGHT;
+
+static inline bool isPhoneConnected()
+{
+#ifdef ENABLE_WIFI_TRANSPORT
+  return watch.isConnected() || wifi_transport_connected();
+#else
+  return watch.isConnected();
+#endif
+}
 
 #ifndef LV_BUFFER_LINES
 #define LV_BUFFER_LINES 80
@@ -2082,6 +2092,10 @@ void hal_setup()
 
   prefs.begin("my-app");
 
+#ifdef ENABLE_WIFI_TRANSPORT
+  wifi_transport_early_init();
+#endif
+
 #if defined(TTGO_TDISPLAY)
   int rt = prefs.getInt("rotate", 1);
 #elif defined(ESP32_TOUCH_LCD_35)
@@ -2271,10 +2285,21 @@ void hal_setup()
   watch.setRingerCallback(ringerCallback);
   watch.setDataCallback(dataCallback);
   watch.setRawDataCallback(rawDataCallback);
+#ifdef ENABLE_WIFI_TRANSPORT
+  /* WiFi-only: release BLE radio to free ~40 KB heap for WiFi driver.
+     ChronosESP32 object is still used for callbacks, getters, and time.
+     sendCommand() is a safe no-op when _inited == false. */
+  btStop();
+#else
   watch.begin();
+#endif
   watch.set24Hour(true);
   watch.setBattery(85);
 
+#ifdef ENABLE_WIFI_TRANSPORT
+  String about = String(ui_info_text) + "\n" + chip + "\nWiFi mode";
+  lv_label_set_text(ui_aboutText, about.c_str());
+#else
   String about = String(ui_info_text) + "\n" + chip + "\n" + watch.getAddress();
   lv_label_set_text(ui_aboutText, about.c_str());
 
@@ -2284,6 +2309,7 @@ void hal_setup()
   String qrCode = "{\"Name\":\"" + chip + "\", \"Mac\":\"" + address + "\"}";
   lv_qrcode_update(ui_connectImage, qrCode.c_str(), qrCode.length());
   lv_label_set_text(ui_connectText, "Scan to connect");
+#endif
 #endif
   // bool intro = prefs.getBool("intro", true);
 
@@ -2515,6 +2541,10 @@ void hal_setup()
 
   Timber.i("Setup done");
   Timber.i(about.c_str());
+
+#ifdef ENABLE_WIFI_TRANSPORT
+  wifi_transport_init();
+#endif
 }
 
 void hal_loop()
@@ -2533,6 +2563,10 @@ void hal_loop()
     delay(5);
 
     watch.loop();
+
+#ifdef ENABLE_WIFI_TRANSPORT
+    wifi_transport_loop();
+#endif
 
 #if defined(BUTTON_HOME) && (BUTTON_HOME != -1)
   btn_home.loop();
@@ -2627,7 +2661,7 @@ void hal_loop()
         nav_status_last_ms = now_ms;
         char tbuf[24];
         snprintf(tbuf, sizeof(tbuf), "%02d : %02d", watch.getHourC(), watch.getMinute());
-        navigation_refresh_status_bar(tbuf, watch.getNotificationCount(), 0, watch.isConnected(), watch.getPhoneBattery());
+        navigation_refresh_status_bar(tbuf, watch.getNotificationCount(), 0, isPhoneConnected(), watch.getPhoneBattery());
       }
     }
 #endif
@@ -2651,7 +2685,7 @@ void hal_loop()
       {
         nav.directions = "Start navigation on Google maps";
         nav.title = "Chronos";
-        nav.duration = watch.isConnected() ? "Inactive" : "Disconnected";
+        nav.duration = isPhoneConnected() ? "Inactive" : "Disconnected";
         nav.eta = "Navigation";
         nav.distance = "";
         navIcCRC = 0xFFFFFFFF;
@@ -2862,7 +2896,7 @@ void update_faces()
   int icon = watch.getWeatherAt(0).icon;
 
   int battery = watch.getPhoneBattery();
-  bool connection = watch.isConnected();
+  bool connection = isPhoneConnected();
 
   int steps = 2735;
   int distance = 17;

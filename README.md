@@ -115,6 +115,25 @@ This is needed for additional functions on esp32 hardware as listed below.
 - Music control, find phone & Camera
 - Send Navigation instructions
 
+### WiFi transport (alternative to BLE)
+
+Some Android head units (e.g. OLEDPRO X4S Eco) only support Bluetooth Serial and lack BLE, so the stock Chronos app cannot run. This fork adds a **WiFi TCP transport** as an alternative: the Android device acts as a WiFi hotspot + TCP server, and the ESP32 connects as a station + TCP client.
+
+| PlatformIO environment | Board | Transport |
+|------------------------|-------|-----------|
+| `lolin_s3_mini_1_28_wifi` | Waveshare S3 1.28" | WiFi TCP (BLE disabled) |
+| `esp32_touch_lcd_3_5_wifi` | Waveshare ESP32-Touch-LCD-3.5 | WiFi TCP (BLE disabled) |
+
+**How it works:**
+1. The Android companion app ([vantc-navi](https://github.com/vantechcorner/vantc-navi)) starts a TCP server on port `8423` over its WiFi hotspot.
+2. The ESP32 connects to the AP and opens a TCP socket to `gateway:8423`.
+3. Chronos protocol packets (time, weather, navigation) are sent length-prefixed over TCP — identical binary format to BLE.
+4. Packets are injected into the `ChronosESP32` parser, so all UI code works unchanged.
+
+**Configuration:** WiFi credentials are hardcoded in [`hal/esp32/wifi_transport.cpp`](hal/esp32/wifi_transport.cpp) (defaults via `Preferences` NVS keys `wifi_ssid`, `wifi_pass`, `wifi_en`). When WiFi mode is active, BLE is disabled (`btStop()`) to free heap memory.
+
+See [`docs/CHRONOS_TECHNICAL_KEYNOTE.md`](docs/CHRONOS_TECHNICAL_KEYNOTE.md) section 8 and 12 for protocol details.
+
 ## Vietnamese fonts and ESP32 LVGL notes
 
 Built-in Montserrat fonts in LVGL only cover basic Latin. The ESP32 build also links **bitmap fonts** generated with [lv_font_conv](https://github.com/lvgl/lv_font_conv) from Montserrat Regular (plain bitmap, `bpp=4`, `--no-compress` so `LV_USE_FONT_COMPRESSED` can stay off in `lv_conf.h`):

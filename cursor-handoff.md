@@ -49,6 +49,23 @@
 
 ## Changelog (cập nhật handoff)
 
+### 2026-05-13 — WiFi TCP transport cho ESP32-S3-1.28 và ESP32-Touch-LCD-3.5
+
+- **Mục đích:** Thêm kênh truyền dữ liệu qua WiFi (time, navigation, weather) để dùng với các đầu Android (OLEDPRO X4S Eco) chỉ hỗ trợ Bluetooth serial mà không có BLE → app Chronos gốc không chạy được.
+- **Kiến trúc:** Android = WiFi AP + TCP server port **8423**. ESP32 = WiFi STA + TCP client → gateway:8423. Packet TCP: `[2-byte BE length][Chronos payload]`, payload giống hệt BLE.
+- **Injection vào ChronosESP32:** File `hal/esp32/wifi_transport.cpp` đọc TCP packet, inject trực tiếp vào `_incomingData` + gọi `dataReceived()` → tất cả callback/getter hiện có (navigation, weather, time) hoạt động không cần sửa.
+- **Cấu hình WiFi:** Preferences NVS — `wifi_ssid`, `wifi_pass`, `wifi_en` (bool). Đặt trước bằng serial/code, ESP32 tự kết nối AP khi khởi động nếu `wifi_en == true`.
+- **BLE tắt khi WiFi:** `btStop()` gọi trước display init khi `ENABLE_WIFI_TRANSPORT` → giải phóng ~40 KB heap cho WiFi driver. `watch.begin()` bị skip, `sendCommand()` là no-op an toàn (`_inited == false`). `isPhoneConnected()` trả `true` nếu BLE hoặc WiFi connected.
+- **Init order (quan trọng):** `wifi_transport_early_init()` (WiFi radio) → display init → `btStop()` + skip `watch.begin()` → `wifi_transport_init()` (no-op). WiFi phải init **trước** BLE/NimBLE, nếu không ESP32-S3 crash do hết heap (`BLE_INIT: Malloc failed`).
+- **Env PlatformIO:**
+  - `lolin_s3_mini_1_28_wifi` — ESP32-S3 1.28" + WiFi (RAM 34.6%, Flash 88.8%)
+  - `esp32_touch_lcd_3_5_wifi` — ESP32 Classic 3.5" + WiFi (RAM 35.1%, Flash 31.7%)
+- **Files thay đổi:**
+  - `hal/esp32/wifi_transport.h` / `.cpp` — WiFi STA + TCP read loop + Chronos injection; `wifi_transport_early_init()` gọi trước BLE
+  - `hal/esp32/app_hal.cpp` — `#include wifi_transport.h`, `wifi_transport_early_init()` ngay sau `prefs.begin()`, `btStop()` + skip `watch.begin()`, `wifi_transport_loop()` trong `hal_loop()`, helper `isPhoneConnected()`, guard `watch.getAddress()` cho WiFi mode
+  - `platformio.ini` — 2 env mới
+- **Android app:** `D:\Github\vantc-navi` — hỗ trợ BLE + WiFi, chọn mode trong UI.
+
 ### 2026-05-10 — Navigation Touch 3.5: chọn UI V2 vs legacy qua PlatformIO
 
 - **Mục đích:** Build một firmware **Waveshare ESP32-Touch-LCD-3.5** nhưng chọn giao diện Navigation **V2** (status bar, hai cột, footer) hoặc **legacy** (bố cục chữ nhật kiểu Chronos: ETA + icon + title + hướng, giống tinh thần layout Waveshare 1.54").
@@ -94,3 +111,4 @@ Lặp với `--size 20` / `30` và tên file / fallback tương ứng.
 - `LV_FONT_FMT_TXT_LARGE` nếu compiler báo font quá lớn.
 - Kiểm tra các màn khác vẫn dùng Montserrat thuần ASCII nếu cần tiếng Việt toàn app.
 - Navigation **bold** thật: generate thêm font từ `Montserrat-Bold.ttf` (lv_font_conv) nếu cần đồng bộ visual với V2.
+- **WiFi transport:** UI cài đặt SSID/password trên watch (hiện phải đặt qua NVS/code); hiển thị icon WiFi trên status bar khi kết nối WiFi; hỗ trợ mDNS thay hardcode gateway.
