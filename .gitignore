@@ -21,6 +21,5 @@ build.py
 # support/ — *.py at repo root of this folder is REQUIRED by PlatformIO (do not delete from git).
 # Ignore local-only: demos, zips, wireframe notes, font sources used only to regenerate lv_font_nav_vn_*.c
 /support/**/*.zip
-/support/**/*.txt
 support/fonts/*.ttf
 support/fonts/*.ttc

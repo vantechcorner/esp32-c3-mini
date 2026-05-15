@@ -1,0 +1,69 @@
+================================================================================
+  Waveshare ESP32-Touch-LCD-3.5 — Thông số & nhắc kích hoạt màn hình
+================================================================================
+(Tài liệu project esp32-c3-mini — tham khảo firmware/driver trong repo)
+
+--------------------------------------------------------------------------------
+1. TÓM TẮT SẢN PHẨM
+--------------------------------------------------------------------------------
+  - Bo mạch: ESP32 (ESP32-D0WD/D0WDR hệ ESP32 module cổ điển, không phải ESP32-S3)
+  - Màn hình: 3.5", IPS, độ phân giải panel vật lý thường 320 x 480 (dọc).
+  - Driver LCD: ST7796 (SPI).
+  - Cảm ứng: FT6336 (I2C).
+  - Nền Waveshare (catalog): https://www.waveshare.com/esp32-touch-lcd-3.5.htm
+
+--------------------------------------------------------------------------------
+2. THÔNG SỐ ĐANG DÙNG TRONG PROJECT (ESP32_TOUCH_LCD_35)
+--------------------------------------------------------------------------------
+  - Hiển thị LVGL: 480 x 320 (xoay ngang 90° clockwise — landscape).
+  - SPI LCD:
+      SCLK (SCK) : GPIO 18
+      MOSI       : GPIO 23
+      MISO       : GPIO 19
+      DC         : GPIO 27
+      CS         : GPIO 5
+      RST panel  : không dùng GPIO (RST = -1 trong pins.h)
+  - Đèn nền (BL): GPIO 25 (PWM backlight trong driver).
+  - I2C (touch):
+      SDA : GPIO 21
+      SCL : GPIO 22
+      Touch controller FT6336 địa chỉ I2C: 0x38
+  - Nút phần cứng (trong firmware hiện tại):
+      PWR : GPIO 36 (INPUT_PULLUP; nhấn thường kéo LOW — thử wake/tắt màn theo code).
+
+--------------------------------------------------------------------------------
+3. NHẮC QUAN TRỌNG — KÍCH HOẠT MÀN HÌNH (TCA9554)
+--------------------------------------------------------------------------------
+  Trên bo có IC mở rộng I/O TCA9554 (I2C địa chỉ 0x20). Demo Waveshare bật các
+  đường liên quan LCD qua chân P0..P2 của TCA9554 TRƯỚC KHI khởi tạo đồ họa.
+
+  Nếu THIẾU bước này, hiện tượng hay gặp:
+      • Đèn nền vẫn sáng (hoặc có “ánh sáng”) nhưng màn đen, không có hình.
+      • BLE/Chronos vẫn có thể hoạt động vì MCU chạy bình thường.
+
+  Trong repo, logic nằm trong: hal/esp32/displays/esp32_touch_lcd_35.hpp
+  — Sau Wire.begin(I2C_SDA, I2C_SCL), gọi init_io_expander() rồi mới gfx->begin():
+
+      TCA9554 @ 0x20
+      - Register 0x03 = 0xF8   → cấu hình P0..P2 là output
+      - Register 0x01 = 0x00   → kéo thấp ngắn (~50 ms)
+      - Register 0x01 = 0x07   → bật P0..P2 mức cao (~50 ms delay)
+
+  KHÔNG được bỏ init TCA9554 khi port firmware mới hoặc đổi framework.
+
+--------------------------------------------------------------------------------
+4. GỢI Ý KHI GẶP LỖI SAU FLASH / RESET
+--------------------------------------------------------------------------------
+  - Nếu chỉ đen màn nhưng USB/BLE còn: kiểm tra lại sequence TCA9554 + SPI pins.
+  - Nếu không nạp được: giữ BOOT, nhấn RST, thả RST rồi thả BOOT (download mode).
+  - So khớp GPIO với schematic/Wiki Waveshare nếu đổi revision board.
+
+--------------------------------------------------------------------------------
+5. LIÊN KẾT THAM KHẢO
+--------------------------------------------------------------------------------
+  - Wiki Waveshare (ESP32-Touch-LCD-3.5): tìm “ESP32-Touch-LCD-3.5” trên waveshare.net/wiki
+  - Package demo ZIP (Arduino/ESP-IDF): thường có trong Wiki hoặc link “Demo” trên trang sản phẩm.
+
+================================================================================
+  Cập nhật theo context project esp32-c3-mini — không thay cho datasheet chính thức.
+================================================================================
