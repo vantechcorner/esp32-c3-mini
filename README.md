@@ -16,36 +16,53 @@ A demo LVGL Watch project for ESP32 C3 mini 240*240 touch display development bo
  - Control (Music Control, Find Phone, Bluetooth State) (Camera Capture)
  - QR Codes, Contacts
  - Games - Simon Says, Racing (Need to enable)
- - Navigation (Google Maps directions on ESP32); route strings use the same Vietnamese font subset (see [Vietnamese fonts](#vietnamese-fonts-and-esp32-lvgl-notes)). On **Waveshare ESP32-Touch-LCD-3.5**, you can pick **Navigation V2** vs **legacy** rectangular UI via PlatformIO environment (see [below](#waveshare-esp32-touch-lcd-35-navigation-ui)).
+ - Navigation (Google Maps directions on ESP32); route strings use the same Vietnamese font subset (see [Vietnamese fonts](#vietnamese-fonts-and-esp32-lvgl-notes)). On **Waveshare ESP32-Touch-LCD-3.5**, pick **Navigation V2** vs **legacy** via PlatformIO (see [Building](#building) and [Navigation UI](#waveshare-esp32-touch-lcd-35-navigation-ui)).
  - Create custom apps with LVGL [sample](src/apps/sample/)
 
- ## Building
+## Building
 
- Select your build environment in platformio.ini by uncommenting only one `default_envs`
+Select your build environment in [`platformio.ini`](platformio.ini) by uncommenting one `default_envs`.
 
- **Waveshare ESP32-Touch-LCD-3.5 — Navigation UI:** same board, two firmware flavors:
+### LilyGo TTGO T-Display (ESP32, 4 MB, ST7789 1.14")
 
- | PlatformIO environment | Navigation UI |
- |------------------------|----------------|
- | `esp32_touch_lcd_3_5` | **V2** (status bar, two-column body, footer) — default |
- | `esp32_touch_lcd_3_5_nav_legacy` | **Legacy** full-panel layout (ETA row + icon + title + directions), build flag `-D NAVIGATION_UI_LEGACY=1` |
+| PlatformIO environment | Transport |
+|--------------------------|-----------|
+| `ttgo_tdisplay` | BLE (Chronos `watch.begin()`) |
+| `ttgo_tdisplay_wifi` | WiFi TCP (`ENABLE_WIFI_TRANSPORT`, BLE disabled) — same credentials as other WiFi builds |
 
- Example: `pio run -e esp32_touch_lcd_3_5 -t upload` vs `pio run -e esp32_touch_lcd_3_5_nav_legacy -t upload` (add `--upload-port COMx` as needed).
+Example: `pio run -e ttgo_tdisplay_wifi -t upload --upload-port COM12`
 
- On Windows, if the build fails with *cannot access* `.pio/build/.../firmware.bin`, another process is locking the file (antivirus, IDE). Close lockers, exclude the project folder from real-time scanning, or flash from `firmware.elf` using the PlatformIO bundled `esptool.py` and `write_flash` at the usual offsets for your partition table.
+**Do not** flash `esp32_touch_lcd_3_5` / `esp32_touch_lcd_3_5_wifi` on a TTGO: that hardware uses a different display driver, resolution, and (for the 3.5" WiFi build) a **16 MB** flash image.
 
- When building for native check that you have configured SDL according to your platform. Follow the instructions here
- https://github.com/lvgl/lv_platformio?tab=readme-ov-file#install-sdl-drivers
+### Waveshare ESP32-Touch-LCD-3.5 — Navigation UI
 
- The SDL path might be different depending on your configuration and you will need to update [`platformio.ini`](platformio.ini) accordingly
+Same board, two firmware flavors:
 
- ### Prebuilt Native 
+| PlatformIO environment | Navigation UI |
+|--------------------------|---------------|
+| `esp32_touch_lcd_3_5` | **V2** (status bar with clock, two-column body, trip row) — default |
+| `esp32_touch_lcd_3_5_nav_legacy` | **Legacy** full-panel layout (ETA row + icon + title + directions), `-D NAVIGATION_UI_LEGACY=1` |
 
- The prebuilt native applications have been included in the [`test folder`](test/), however you might still require SDL installed before running them.
- 
- You can also find binary files for various boards.
+Touch LCD 3.5 **WiFi** (16 MB flash only): `esp32_touch_lcd_3_5_wifi`. See [WiFi transport](#wifi-transport-alternative-to-ble).
 
- ### Web Flasher (ESP32)
+Example: `pio run -e esp32_touch_lcd_3_5 -t upload` vs `pio run -e esp32_touch_lcd_3_5_nav_legacy -t upload` (add `--upload-port COMx` as needed).
+
+On Windows, if the build fails with *cannot access* `.pio/build/.../firmware.bin`, another process is locking the file (antivirus, IDE). Close lockers, exclude the project folder from real-time scanning, or flash using the PlatformIO `esptool.py` and offsets for your partition table.
+
+When building for **native** SDL, follow [lv_platformio — SDL](https://github.com/lvgl/lv_platformio?tab=readme-ov-file#install-sdl-drivers) and adjust SDL paths in `platformio.ini` if needed.
+
+### Prebuilt native / `test/`
+
+Prebuilt native binaries are **not** tracked in this repo (`test/` is in [`.gitignore`](.gitignore)). Build a native env from `platformio.ini` if you need desktop LVGL runs.
+
+Merged ESP32 binaries may appear under `firmware/` after a successful build (also gitignored).
+
+### `support/` and Cursor
+
+- **`support/*.py`** is required by PlatformIO (`header_gen.py`, `hardware_build_extra.py`, etc.) and **must stay in git**. Zips, local `.txt` notes, and font sources under `support/fonts/*.ttf` are gitignored (see [`.gitignore`](.gitignore)); the app uses compiled fonts in `src/apps/navigation/`, not runtime loads from `support/`.
+- **`.cursor/rules/`** is gitignored so local Cursor agent rules are not committed by default.
+
+### Web Flasher (ESP32)
 
  You can also flash ESP32 boards using the web tool available at https://chronos.ke/c3-ui#install
 
@@ -122,7 +139,10 @@ Some Android head units (e.g. OLEDPRO X4S Eco) only support Bluetooth Serial and
 | PlatformIO environment | Board | Transport |
 |------------------------|-------|-----------|
 | `lolin_s3_mini_1_28_wifi` | Waveshare S3 1.28" | WiFi TCP (BLE disabled) |
-| `esp32_touch_lcd_3_5_wifi` | Waveshare ESP32-Touch-LCD-3.5 | WiFi TCP (BLE disabled) |
+| `esp32_touch_lcd_3_5_wifi` | Waveshare ESP32-Touch-LCD-3.5 (16 MB) | WiFi TCP (BLE disabled) |
+| `ttgo_tdisplay_wifi` | LilyGo **TTGO T-Display** ESP32 (4 MB, ST7789 1.14") | WiFi TCP (BLE disabled) |
+
+Do **not** flash `esp32_touch_lcd_3_5_*` on a TTGO T-Display (wrong display driver / flash layout).
 
 **How it works:**
 1. The Android companion app ([vantc-navi](https://github.com/vantechcorner/vantc-navi)) starts a TCP server on port `8423` over its WiFi hotspot.
@@ -144,7 +164,7 @@ Built-in Montserrat fonts in LVGL only cover basic Latin. The ESP32 build also l
 | [`src/apps/navigation/lv_font_nav_vn_20.c`](src/apps/navigation/lv_font_nav_vn_20.c) | Navigation (larger lines) |
 | [`src/apps/navigation/lv_font_nav_vn_30.c`](src/apps/navigation/lv_font_nav_vn_30.c) | Navigation (distance / title line) |
 
-Unicode ranges used: `0x20-0x7F`, `0xA0-0xFF`, `0x100-0x24F`, `0x1EA0-0x1EFF`, with fallback to the stock Montserrat size. Source TTF is ignored by git under `support/fonts/Montserrat*.ttf` (see [`.gitignore`](.gitignore)).
+Unicode ranges used: `0x20-0x7F`, `0xA0-0xFF`, `0x100-0x24F`, `0x1EA0-0x1EFF`, with fallback to the stock Montserrat size. **Runtime** does not load fonts from `support/` — Vietnamese `.c` fonts are compiled from `src/apps/navigation/`. Optional **source** TTF under `support/fonts/` is gitignored (see [`.gitignore`](.gitignore)); place `Montserrat-Regular.ttf` locally to regenerate.
 
 **Regenerate** (after placing `support/fonts/Montserrat-Regular.ttf`):
 
@@ -170,7 +190,7 @@ If this step is skipped, the board may show **backlight on but no image** (black
 
 Navigation layout for this board is selected at **compile time** (see [Building](#building)):
 
-- **`esp32_touch_lcd_3_5`** — **Navigation V2**: landscape layout with a status row (clock, notification/call badges, battery, Bluetooth), main content column plus map/icon column, and a footer line for remaining distance.
+- **`esp32_touch_lcd_3_5`** — **Navigation V2**: landscape layout with a status row (**clock**), main content column plus map/icon column, trip summary row (duration / distance / ETA time), and an optional progress bar placeholder.
 - **`esp32_touch_lcd_3_5_nav_legacy`** — **Legacy** Chronos-style rectangular screen: single column with ETA text, turn icon, route title, and directions (similar spirit to the smaller rectangular Navigation layouts on other boards).
 
 Implementation: [`src/apps/navigation/navigation.c`](src/apps/navigation/navigation.c); macro `NAVIGATION_UI_LEGACY` gates the legacy branch. Status-bar refresh in [`hal/esp32/app_hal.cpp`](hal/esp32/app_hal.cpp) applies only to **V2**, not legacy.

@@ -8,6 +8,19 @@ prefs.txt
 **/convert.py
 scripts/api_migrate.py
 build.py
-/firmware
-/test/hardware
-support/fonts/Montserrat*.ttf
+
+# Merged binaries / post-build artifacts (see support/hardware_build_extra.py)
+/firmware/
+
+# Local test / prebuilt natives (not part of PlatformIO ESP32 toolchain)
+/test/
+
+# Cursor — local agent rules (opt-in: remove line or use !.cursor/rules/foo.mdc to track one file)
+.cursor/rules/
+
+# support/ — *.py at repo root of this folder is REQUIRED by PlatformIO (do not delete from git).
+# Ignore local-only: demos, zips, wireframe notes, font sources used only to regenerate lv_font_nav_vn_*.c
+/support/**/*.zip
+/support/**/*.txt
+support/fonts/*.ttf
+support/fonts/*.ttc

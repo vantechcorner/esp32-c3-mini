@@ -261,7 +261,7 @@ extern "C" {
 void ui_navScreen_screen_init(void);
 lv_obj_t *get_nav_screen(void);
 #ifdef ENABLE_APP_NAVIGATION
-void navigation_refresh_status_bar(const char *clock_hm, int notif_cnt, int call_cnt, bool ble_ok, uint8_t phone_batt_pct);
+void navigation_refresh_status_bar(const char *clock_hm, int notif_cnt, int call_cnt, bool ble_ok, uint8_t phone_batt_pct, bool wifi_ok);
 #endif
 }
 
@@ -2661,7 +2661,7 @@ void hal_loop()
         nav_status_last_ms = now_ms;
         char tbuf[24];
         snprintf(tbuf, sizeof(tbuf), "%02d : %02d", watch.getHourC(), watch.getMinute());
-        navigation_refresh_status_bar(tbuf, watch.getNotificationCount(), 0, isPhoneConnected(), watch.getPhoneBattery());
+        navigation_refresh_status_bar(tbuf, 0, 0, false, 0, false);
       }
     }
 #endif
@@ -2697,7 +2697,11 @@ void hal_loop()
         nav.title = "";
       }
 
+#if defined(ESP32_TOUCH_LCD_35) && defined(ENABLE_APP_NAVIGATION) && !defined(NAVIGATION_UI_LEGACY)
+      String navText = nav.eta + "\n" + nav.duration + "\n" + nav.distance;
+#else
       String navText = nav.eta + "\n" + nav.duration + " " + nav.distance;
+#endif
 
 #ifdef ENABLE_APP_NAVIGATION
       if (actScr != get_nav_screen() && nav.active && navSwitch)
@@ -2728,6 +2732,9 @@ void hal_loop()
 #endif
       navIconState(nav.active && nav.hasIcon);
       navigateInfo(navText.c_str(), nav.title.c_str(), nav.directions.c_str());
+#if defined(ESP32_TOUCH_LCD_35) && defined(ENABLE_APP_NAVIGATION) && !defined(NAVIGATION_UI_LEGACY)
+      navigation_ws35_set_trip_row(nav.eta.c_str(), nav.duration.c_str(), nav.distance.c_str());
+#endif
     }
     if (navIcChanged)
     {

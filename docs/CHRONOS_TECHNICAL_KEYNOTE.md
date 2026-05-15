@@ -221,6 +221,29 @@ configurationReceivedCallback(CF_NAV_ICON, pos, crc);
 
 Board-specific **Navigation V2** (e.g. large landscape panel) vs **legacy** layout is selected at compile time (`NAVIGATION_UI_LEGACY`); the **phone payload is identical**.
 
+### 5.5 How this Android app produces the 48x48 icon
+
+The icon sent to the watch is obtained **directly from the Google Maps notification** rather than programmatically drawn. This ensures all maneuver types are covered (roundabout exits, arrive, merge, fork, keep left/right, etc.).
+
+**Extraction pipeline** (`MapsNavigationListenerService.extractManeuverIcon`):
+
+1. **`extras.get(EXTRA_LARGE_ICON)`** — retrieves the raw object without type casting.
+   - On most phones (Android 12+): returns a `Bitmap` directly.
+   - On **Android 10/11 and some OEM head units** (e.g. OLEDPRO X4S ECO): returns an `android.graphics.drawable.Icon` object instead.
+   - The code checks `is Bitmap` vs `is Icon` at runtime to handle both cases without `ClassCastException`.
+   - For API 33+ (TIRAMISU): uses type-safe `getParcelable(key, Bitmap::class.java)`.
+2. **`Icon` → `Bitmap` conversion** (`iconToBitmap`): calls `icon.loadDrawable(context)`, renders the `Drawable` onto a `Canvas`-backed `Bitmap` (API 23+).
+3. **Fallback**: `notification.getLargeIcon().loadDrawable()` — alternative path if the extras approach fails entirely.
+4. The bitmap (any size, any color) is scaled to **48x48** via `Bitmap.createScaledBitmap`.
+5. **Alpha-aware thresholding** converts to 1-bpp:
+   - If the image has significant transparency (Maps icons use colored arrows on transparent background): any pixel with `alpha > 80` becomes white.
+   - If fully opaque: luminance threshold `lum > 90` separates foreground from background.
+6. If extraction fails entirely, a fallback renderer draws a basic arrow based on text classification.
+
+**Crash protection:** All icon extraction and notification processing is wrapped in `try-catch` blocks. On OEM Android ROMs (especially head units like OLEDPRO X4S ECO running Android 10), `getParcelable()` and `getLargeIcon()` can throw unexpected `RuntimeException`, `ClassCastException`, or `NullPointerException`. The app logs errors via `Log.e` and gracefully falls back to programmatic icon rendering instead of crashing.
+
+This matches the approach used by the Chronos app on the Play Store.
+
 ---
 
 ## 6. Other notable device → phone / phone → device flows
@@ -376,18 +399,22 @@ The ESP32 firmware needs the following configurable parameters (suggest storing 
 
 **Auto-detect gateway:** After `WiFi.begin(ssid, password)` and `WiFi.waitForConnectResult()`, the gateway IP is available via `WiFi.gatewayIP()`.
 
-### 8.6 BLE disabled in WiFi mode
+### 8.6 Coexistence with BLE
 
-In practice, ESP32-S3 does **not** have enough heap to run WiFi + NimBLE (BLE) simultaneously with LVGL — `BLE_INIT: Malloc failed` crashes the device. The firmware therefore uses **WiFi-only mode** when `ENABLE_WIFI_TRANSPORT` is defined:
+ESP32 original supports both WiFi and BLE simultaneously. Options:
+1. **WiFi-only mode:** Disable BLE advertising when WiFi is active. Simpler, no resource conflicts.
+2. **Dual mode:** Keep BLE advertising while WiFi is connected. Both transports feed the same `ChronosESP32` parser. Higher power consumption but allows fallback.
 
-1. `btStop()` is called early in `hal_setup()` to release the BLE radio controller memory.
-2. `watch.begin()` (which initializes NimBLE) is **skipped**.
-3. The `ChronosESP32` object still exists — its callbacks, getters, and time functions work normally. `sendCommand()` is a safe no-op when `_inited == false`.
-4. `wifi_transport_early_init()` runs **before** display and BLE init (right after `prefs.begin()`) to ensure WiFi driver allocates heap first.
+ESP32-C3 and ESP32-S3 also support WiFi + BLE coexistence but may have memory constraints.
 
-This frees ~40 KB of heap for the WiFi driver stack.
+### 8.7 Tested devices
 
-### 8.7 Android-side source files
+| Device | Android | Transport | Notes |
+|--------|---------|-----------|-------|
+| Samsung Galaxy (various) | 12–14 | BLE | Standard phone usage |
+| OLEDPRO X4S ECO | 10 (API 29) | WiFi TCP | Car head unit; BLE not available. `EXTRA_LARGE_ICON` returns `Icon` instead of `Bitmap` — handled by type-checking. Crash protection required for stable operation. |
+
+### 8.8 Android-side source files
 
 | File | Role |
 |------|------|
@@ -491,71 +518,13 @@ Up to 24 entries. The firmware uses `startHour` to label each entry as `(startHo
 
 ---
 
-## 12. Firmware-side WiFi transport implementation
-
-The firmware now includes a **WiFi TCP client** that connects to the Android AP and receives Chronos packets. This is implemented as a compile-time option via `ENABLE_WIFI_TRANSPORT`.
-
-### 12.1 Files
-
-| File | Role |
-|------|------|
-| `hal/esp32/wifi_transport.h` | Public API: `wifi_transport_early_init()`, `wifi_transport_init()`, `wifi_transport_loop()`, `wifi_transport_connected()` |
-| `hal/esp32/wifi_transport.cpp` | WiFi STA connection, TCP client, length-prefixed packet reader, injection into `ChronosESP32` |
-
-### 12.2 Injection mechanism
-
-WiFi-received packets are injected directly into the `ChronosESP32` instance's internal parser:
-
-1. Complete payload is copied into `watch._incomingData.data[]`
-2. `watch._incomingData.length` is set from the packet header
-3. `watch.dataReceived()` is called — triggering all existing callbacks (`configCallback`, `notificationCallback`, etc.)
-
-This means **all existing firmware code** (navigation, weather, time sync, watchface updates) works unchanged over WiFi.
-
-### 12.3 Configuration
-
-WiFi credentials are stored in NVS via `Preferences`:
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `wifi_ssid` | String | `""` | AP SSID to connect to |
-| `wifi_pass` | String | `""` | AP password |
-| `wifi_en` | bool | `false` | Enable WiFi transport |
-
-Set these before flashing or via serial console. When `wifi_en` is true and SSID is non-empty, the firmware connects to the AP at startup and opens a TCP connection to `gateway:8423`.
-
-### 12.4 PlatformIO environments
-
-| Environment | Board | Flag |
-|-------------|-------|------|
-| `lolin_s3_mini_1_28_wifi` | ESP32-S3 1.28" | `-D ENABLE_WIFI_TRANSPORT=1` |
-| `esp32_touch_lcd_3_5_wifi` | ESP32 Classic 3.5" | `-D ENABLE_WIFI_TRANSPORT=1` |
-
-BLE is **disabled** (`btStop()`) when WiFi is active to free heap (see §8.6). The helper `isPhoneConnected()` in `app_hal.cpp` returns `true` if either transport is connected.
-
-### 12.5 Init order (critical for ESP32-S3)
-
-```
-prefs.begin()
-  → wifi_transport_early_init()    ← WiFi radio starts FIRST
-    → display / LVGL init
-      → btStop()                   ← release BLE radio memory
-      → skip watch.begin()         ← no NimBLE init
-        → hal_loop: wifi_transport_loop()  ← TCP connect + packet read
-```
-
-WiFi driver **must** allocate heap before NimBLE. Reversing this order causes `BLE_INIT: Malloc failed` → crash on ESP32-S3.
-
----
-
-## 13. Quick reference: files to read first
+## 12. Quick reference: files to read first
 
 | Goal | File(s) |
 |------|---------|
 | BLE + structs | [chronos-esp32 `ChronosESP32.h` / `.cpp`](https://github.com/fbiego/chronos-esp32) |
 | Transport abstraction | `android/.../transport/WatchTransport.kt`, `BleTransport.kt`, `WifiTransport.kt` |
 | WiFi TCP spec | This document, section 8 |
-| WiFi firmware impl | `hal/esp32/wifi_transport.h`, `hal/esp32/wifi_transport.cpp` |
 | Weather protocol | This document, section 9 |
 | Loop integration, LVGL, flags | `hal/esp32/app_hal.cpp` |
 | Navigation UI | `src/apps/navigation/navigation.c`, `navigation.h` |
@@ -565,11 +534,12 @@ WiFi driver **must** allocate heap before NimBLE. Reversing this order causes `B
 
 ---
 
-## 14. Document maintenance
+## 13. Document maintenance
 
 - **Library version:** This keynote aligns with **ChronosESP32 1.9.0** lines in `platformio.ini`. When upgrading the dependency, re-diff `ChronosESP32.cpp` for opcode changes.
 - **Firmware fork:** If your team maintains a private fork, link it in your internal wiki and note **drift** from `fbiego/esp32-c3-mini` and `fbiego/chronos-esp32`.
 - **Transport updates:** WiFi TCP transport spec (section 8) and weather protocol (section 9) are maintained alongside the Android app source in this repo.
+- **OEM compatibility:** Section 5.5 and 8.7 document device-specific quirks (e.g. OLEDPRO X4S ECO `Icon` vs `Bitmap`). Update when testing new devices.
 
 ---
 
