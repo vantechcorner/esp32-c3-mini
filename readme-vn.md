@@ -30,6 +30,12 @@ Fork này ưu tiên điều hướng, giờ và thời tiết trên các board �
 
 **Cảnh báo nạp firmware:** **Không** nạp `esp32_touch_lcd_3_5*` lên TTGO T-Display (driver màn hình, độ phân giải và bố cục flash khác).
 
+## Firmware có sẵn (bản test)
+
+Firmware test đã build sẵn cho các board ở trên được đăng trên trang **[GitHub Releases](https://github.com/vantechcorner/esp32-c3-mini/releases)**. Tải file `.bin` đúng board rồi nạp bằng web flasher (ví dụ [ESPWebTool](https://esptool.spacehuhn.com/)) hoặc `esptool`. Dùng offset flash theo tên file (ví dụ `_0x0.bin` → địa chỉ `0x0`, `_0x1000.bin` → `0x1000`).
+
+Nếu muốn tự build từ mã nguồn, xem [Build với PlatformIO](#build-với-platformio) bên dưới.
+
 ### Waveshare ESP32-Touch-LCD-3.5 — giao diện Navigation
 
 Trên board **3.5 inch** (320×480), layout Navigation chọn lúc **biên dịch** trong [`src/apps/navigation/navigation.c`](src/apps/navigation/navigation.c):

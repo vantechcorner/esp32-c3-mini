@@ -39,7 +39,8 @@ void ui_app_exit(void);
     void navigation_refresh_status_bar(const char *clock_hm, int notif_cnt, int call_cnt, bool ble_ok, uint8_t phone_batt_pct, bool wifi_ok);
 #if defined(ESP32_TOUCH_LCD_35) && !defined(NAVIGATION_UI_LEGACY)
     /** Trip row (duration / distance / ETA time only); call after navigateInfo when nav packet fields are known */
-    void navigation_ws35_set_trip_row(const char *eta_raw, const char *duration, const char *distance);
+    void navigation_ws35_set_trip_row(const char *eta_raw, const char *duration, const char *distance,
+                                      const char *title, const char *directions, int clock_h, int clock_m);
 #endif
 #endif
     void navIconState(bool show);

@@ -2698,6 +2698,21 @@ void hal_loop()
       }
 
 #if defined(ESP32_TOUCH_LCD_35) && defined(ENABLE_APP_NAVIGATION) && !defined(NAVIGATION_UI_LEGACY)
+      if (nav.active)
+      {
+        static uint32_t nav_log_ms = 0;
+        uint32_t now_log = millis();
+        if (now_log - nav_log_ms >= 2000U)
+        {
+          nav_log_ms = now_log;
+          Timber.i("NAV dur='%s' eta='%s' dist='%s' clk=%02d:%02d",
+                   nav.duration.c_str(), nav.eta.c_str(), nav.distance.c_str(), watch.getHourC(),
+                   watch.getMinute());
+        }
+      }
+#endif
+
+#if defined(ESP32_TOUCH_LCD_35) && defined(ENABLE_APP_NAVIGATION) && !defined(NAVIGATION_UI_LEGACY)
       String navText = nav.eta + "\n" + nav.duration + "\n" + nav.distance;
 #else
       String navText = nav.eta + "\n" + nav.duration + " " + nav.distance;
@@ -2733,7 +2748,9 @@ void hal_loop()
       navIconState(nav.active && nav.hasIcon);
       navigateInfo(navText.c_str(), nav.title.c_str(), nav.directions.c_str());
 #if defined(ESP32_TOUCH_LCD_35) && defined(ENABLE_APP_NAVIGATION) && !defined(NAVIGATION_UI_LEGACY)
-      navigation_ws35_set_trip_row(nav.eta.c_str(), nav.duration.c_str(), nav.distance.c_str());
+      navigation_ws35_set_trip_row(nav.eta.c_str(), nav.duration.c_str(), nav.distance.c_str(),
+                                   nav.title.c_str(), nav.directions.c_str(), watch.getHourC(),
+                                   watch.getMinute());
 #endif
     }
     if (navIcChanged)

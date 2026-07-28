@@ -51,7 +51,7 @@ pio run -e ttgo_tdisplay_wifi -t upload --upload-port COM12
   - Cột phải: `ui_navTitle` (xanh), `ui_navDirection` (wrap, tách 2 dòng nếu có *"về hướng"*).
   - Hàng trip 3 cột: duration / distance / ETA (**chỉ giờ** `HH:MM`, bỏ chữ "Dự kiến").
   - Progress bar placeholder (chưa có field từ app).
-- **Trip row — nguồn dữ liệu (quan trọng):** Không parse `navText` newline nữa. Sau `navigateInfo(...)`, HAL gọi `navigation_ws35_set_trip_row(nav.eta, nav.duration, nav.distance)` (`app_hal.cpp`). ETA qua `nav_ws35_format_eta_time()` tìm `HH:MM` trong chuỗi app.
+- **Trip row — nguồn dữ liệu (quan trọng):** Không parse `navText` newline nữa. Sau `navigateInfo(...)`, HAL gọi `navigation_ws35_set_trip_row(eta, duration, distance, title, directions, clock_h, clock_m)` (`app_hal.cpp`). Cột 1 = `duration` (2 dòng nếu có giờ+phút); cột 3 = ETA `HH:MM` qua `nav_ws35_format_eta_time()`. Workaround tạm: nếu `duration` chỉ có phút mà ETA−clock ≥ 60 phút → tính giờ/phút từ ETA (cần giờ ESP sync).
 - **Status clock:** `navigation_refresh_status_bar()` ~1 Hz từ `hal_loop` khi Nav là màn active (`millis()`, không chỉ `sec_tick`).
 - **HAL Nav:** Không `update_faces()` khi Nav top; `lv_screen_load` instant (không fade) trên Touch 3.5.
 
@@ -85,6 +85,7 @@ pio run -e ttgo_tdisplay_wifi -t upload --upload-port COM12
 | Boot loop `Detected size(4096k) smaller than ... 16384k` | Nạp `esp32_touch_lcd_3_5_wifi` lên **TTGO 4 MB** | Dùng `ttgo_tdisplay_wifi` |
 | Màn đen sau flash | Sai env / sai driver; hoặc TCA9554 chưa enable | Đúng env; xem TCA9554 |
 | ETA cột 3 sai / thiếu | Parse `navText` khi `distance` rỗng | Dùng `navigation_ws35_set_trip_row` từ field riêng |
+| Cột duration chỉ “XX phút” | VanTC-Navi gửi `duration` thiếu phần giờ | Sửa app — xem mục **VanTC-Navi handoff** bên dưới; firmware có workaround ETA |
 | Windows build fail | Lock `.pio/build/firmware.bin` | Defender exclude; đóng IDE lock file |
 
 ## Repo / gitignore
@@ -92,7 +93,95 @@ pio run -e ttgo_tdisplay_wifi -t upload --upload-port COM12
 - Ignore: `/firmware/`, `/test/`, `.cursor/rules/`, `support/**/*.zip`, `support/**/*.txt`, `support/fonts/*.ttf`.
 - **Giữ trong git:** `support/*.py` (PlatformIO `header_gen.py`, `hardware_build_extra.py`, …).
 
+## VanTC-Navi handoff — navigation `duration` field (English)
+
+**Live test date: 17 May 2026** — ESP32-Touch-LCD-3.5, env `esp32_touch_lcd_3_5_wifi`, TCP to VanTC-Navi on Android (WiFi port 8423). Serial log on COM21.
+
+Use this section when fixing **[VanTC-Navi](https://github.com/vantechcorner/vantc-navi)**. Full protocol context: [`docs/CHRONOS_TECHNICAL_KEYNOTE.md`](docs/CHRONOS_TECHNICAL_KEYNOTE.md) §5.6.
+
+### Transport
+
+- **WiFi:** `[2-byte BE length][Chronos payload]` — same bytes as BLE NUS; ESP injects into `ChronosESP32::dataReceived()`.
+- **BLE:** identical navigation payload.
+
+### Live navigation packet (`0xAB` / `0xEF` / `0xFE`, status `data[5] == 0x80`)
+
+Null-terminated UTF-8 strings, **fixed order** (ChronosESP32 1.9.0):
+
+```text
+title \0
+duration \0
+distance \0
+eta \0
+directions \0
+speed \0
+```
+
+Each `0x80` packet **replaces all six strings** (no per-field merge on the device).
+
+### How ESP32-Touch-LCD-3.5 Navigation V2 uses each field
+
+| Chronos field | Trip UI / panel |
+|---------------|-----------------|
+| `title` | Large green line — distance to next maneuver (e.g. `0 m`, `84 km`) |
+| **`duration`** | **Trip column 1 — remaining travel time** (user-reported bug here) |
+| `distance` | Trip column 2 — remaining distance (e.g. `84 km`) |
+| `eta` | Trip column 3 — arrival time only (`HH:MM` extracted; prefix “Dự kiến” stripped) |
+| `directions` | Main instruction block (right column) |
+| `speed` | Not shown on V2 Touch 3.5 |
+| `icon` (48×48 1 bpp) | Left column; 3×96-byte chunks via `0xEE` / `0xFE` |
+
+### Observed payload from VanTC-Navi (17 May 2026)
+
+**Google Maps UI:** `1 hour 25 minutes` (remaining time).  
+**ESP32 trip column 1:** `25 minutes` only.
+
+Serial (throttled ~every 2 s while `nav.active`):
+
+```text
+[INFO]: NAV dur='25 phút' eta='Dự kiến 23:56' dist='84 km' clk=22:31
+[INFO]: NAV dur='26 phút' eta='Dự kiến 23:56' dist='84 km' clk=22:31
+```
+
+| Field received | Example | Contains full “1 hour …”? |
+|----------------|---------|----------------------------|
+| `duration` | `25 phút`, `26 phút` | **No** — minutes portion only |
+| `eta` | `Dự kiến 23:56` | Arrival time only, not remaining duration |
+| `distance` | `84 km` | No |
+| `title` | `0 m`, `84 km` | Maneuver/trip distance, not time |
+
+**Conclusion:** Not an LVGL clipping issue. **VanTC-Navi must send the full remaining-time string in `duration`.** No other field contained `1 hour 25 minutes` during the test.
+
+### Expected fix on VanTC-Navi
+
+| Field | Should contain |
+|-------|----------------|
+| **`duration`** | Full remaining time as shown on Maps, e.g. `1 giờ 25 phút`, `1 hr 25 min`, or total minutes `85 phút` (≥60 → firmware splits hours/minutes) |
+| **`eta`** | Arrival time only, e.g. `Dự kiến 23:56` or `23:56` |
+
+**Do not** send only `25 phút` when Maps shows `1 giờ 25 phút`. Avoid parsing that drops the hour segment (e.g. regex capturing only `(\d+)\s*phút`).
+
+When building the `0x80` packet, assign the Maps notification **remaining travel time** string to **`duration`** (second string in the list above).
+
+### Temporary firmware workaround (esp32-c3-mini)
+
+If `duration` has no hour marker and parsed ETA minus synced clock is **≥ 60 minutes**, firmware displays hours + minutes from that delta. Requires correct time sync via Chronos time packets. **Proper fix remains on the Android app.**
+
+### Post-fix verification checklist
+
+1. Maps `1 hour XX min` → device log `NAV dur='1 giờ XX phút'` (or equivalent).
+2. Maps `< 1 hour` → `duration='45 phút'` (single line OK).
+3. Each live update sends all six strings; avoid empty `duration` on partial updates.
+
+---
+
 ## Changelog handoff
+
+### 2026-05-17 — VanTC-Navi `duration` field documented (live test)
+
+- **Test:** 17 May 2026, Touch LCD 3.5 WiFi, Maps `1 h 25 min` vs ESP `25 phút`; serial `NAV dur=...` logging in `app_hal.cpp`.
+- **Docs:** VanTC-Navi handoff (EN) in this file + §5.6 in `docs/CHRONOS_TECHNICAL_KEYNOTE.md`.
+- **Firmware:** `navigation_ws35_set_trip_row` + duration from ETA when `duration` is minutes-only and trip ≥ 60 min; trip column wrap / 2-line display.
 
 ### 2026-05-15 — README song ngữ, TTGO WiFi, Navigation V2 fixes
 

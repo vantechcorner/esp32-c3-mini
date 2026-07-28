@@ -114,7 +114,7 @@ def merge_bins(pairs, out_path, new_pairs, chip, env):
     with open(FIRMWARE_JSON_PATH, 'w', encoding='utf-8') as f:
         json.dump(existing_data, f, ensure_ascii=False, indent=4)
 
-    print(f"✅ Wrote merged file: {out_path} ({len(buf)} bytes)")
+    print(f"Wrote merged file: {out_path} ({len(buf)} bytes)")
 
 def read_version(content):
     version = re.search(r'#define\s+UI_VERSION\s+"([^"]+)"', content)
@@ -178,7 +178,7 @@ def after_build(source, target, env):
     # Parse offset + .bin pairs
     pairs = re.findall(r"(0x[0-9a-fA-F]+)\s+(\S+\.bin)", upload_cmd)
     if not pairs:
-        print("❌ Could not detect any binary segments from upload command!")
+        print("ERROR: Could not detect any binary segments from upload command!")
         print(upload_cmd)
         return
 

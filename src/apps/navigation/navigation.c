@@ -118,6 +118,152 @@ static void nav_ws35_format_eta_time(const char *raw, char *out, size_t out_len)
     }
 }
 
+static bool nav_ws35_parse_eta_hm(const char *raw, int *out_h, int *out_m)
+{
+    if (raw == NULL || out_h == NULL || out_m == NULL) {
+        return false;
+    }
+    for (const char *p = raw; *p != '\0'; p++) {
+        if (!isdigit((unsigned char)*p)) {
+            continue;
+        }
+        int hh = 0, mm = 0, consumed = 0;
+        if (sscanf(p, "%d:%d%n", &hh, &mm, &consumed) != 2 || consumed < 3) {
+            continue;
+        }
+        if (hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+            continue;
+        }
+        *out_h = hh;
+        *out_m = mm;
+        return true;
+    }
+    return false;
+}
+
+static int nav_ws35_minutes_until(int cur_h, int cur_m, int eta_h, int eta_m)
+{
+    int cur = cur_h * 60 + cur_m;
+    int eta = eta_h * 60 + eta_m;
+    int diff = eta - cur;
+    if (diff < 0) {
+        diff += 24 * 60;
+    }
+    return diff;
+}
+
+static void nav_ws35_format_total_minutes(int total_mins, char *out, size_t out_len)
+{
+    if (out == NULL || out_len == 0) {
+        return;
+    }
+    if (total_mins < 60) {
+        snprintf(out, out_len, "%d phút", total_mins);
+    } else {
+        snprintf(out, out_len, "%d giờ\n%d phút", total_mins / 60, total_mins % 60);
+    }
+}
+
+static bool nav_ws35_str_has_hours(const char *s)
+{
+    if (s == NULL || s[0] == '\0') {
+        return false;
+    }
+    return strstr(s, "giờ") != NULL || strstr(s, "gio") != NULL || strstr(s, "hour") != NULL ||
+           strstr(s, " hr") != NULL || strstr(s, "hr ") != NULL;
+}
+
+static bool nav_ws35_str_has_minutes(const char *s)
+{
+    if (s == NULL || s[0] == '\0') {
+        return false;
+    }
+    return strstr(s, "phút") != NULL || strstr(s, "phut") != NULL || strstr(s, " min") != NULL ||
+           strstr(s, "min") != NULL;
+}
+
+/* App may put full ETA duration in eta/distance while duration is minutes-only */
+static const char *nav_ws35_best_duration_raw(const char *duration, const char *eta, const char *distance,
+                                              const char *title, const char *directions)
+{
+    const char *candidates[] = {duration, eta, distance, directions, title, NULL};
+    for (int i = 0; candidates[i] != NULL; i++) {
+        const char *s = candidates[i];
+        if (s[0] != '\0' && nav_ws35_str_has_hours(s) && nav_ws35_str_has_minutes(s)) {
+            return s;
+        }
+    }
+    if (duration != NULL && duration[0] != '\0') {
+        return duration;
+    }
+    return NULL;
+}
+
+/* Duration column: keep hours + minutes visible (e.g. "1 giờ 38 phút"), often on two lines */
+static void nav_ws35_format_duration_display(const char *raw, char *out, size_t out_len)
+{
+    if (out == NULL || out_len == 0) {
+        return;
+    }
+    out[0] = '\0';
+    if (raw == NULL || raw[0] == '\0') {
+        snprintf(out, out_len, "-");
+        return;
+    }
+
+    int h = 0, m = 0;
+    if (sscanf(raw, "%d giờ %d phút", &h, &m) == 2 ||
+        sscanf(raw, "%d gio %d phut", &h, &m) == 2 ||
+        sscanf(raw, "%d h %d phút", &h, &m) == 2 ||
+        sscanf(raw, "%d h %d min", &h, &m) == 2) {
+        snprintf(out, out_len, "%d giờ\n%d phút", h, m);
+        return;
+    }
+
+    /* App may send total minutes only: 98 phút = 1 h 38 min */
+    int mins_only = 0;
+    if (sscanf(raw, "%d phút", &mins_only) == 1 ||
+        sscanf(raw, "%d phut", &mins_only) == 1 ||
+        sscanf(raw, "%d min", &mins_only) == 1) {
+        if (mins_only >= 60) {
+            snprintf(out, out_len, "%d giờ\n%d phút", mins_only / 60, mins_only % 60);
+            return;
+        }
+    }
+
+    const char *phut = strstr(raw, "phút");
+    if (phut == NULL) {
+        phut = strstr(raw, "phut");
+    }
+    if (phut == NULL) {
+        phut = strstr(raw, "min");
+    }
+    const char *gio = strstr(raw, "giờ");
+    if (gio == NULL) {
+        gio = strstr(raw, "gio");
+    }
+    if (gio == NULL) {
+        gio = strstr(raw, "hour");
+    }
+    if (gio != NULL && phut != NULL && phut > gio) {
+        size_t left_len = (size_t)(phut - raw);
+        while (left_len > 0 && (raw[left_len - 1] == ' ' || raw[left_len - 1] == '\t')) {
+            left_len--;
+        }
+        while (*phut == ' ' || *phut == '\t') {
+            phut++;
+        }
+        if (left_len > 0 && left_len < out_len) {
+            memcpy(out, raw, left_len);
+            out[left_len] = '\n';
+            snprintf(out + left_len + 1, out_len - left_len - 1, "%s", phut);
+            return;
+        }
+    }
+
+    snprintf(out, out_len, "%s", raw);
+}
+
 /* Trip cells: fixed outer column height; shrink font by UTF-8 length so long strings still fit */
 static void nav_ws35_trip_label_autofit(lv_obj_t *lbl, const char *txt)
 {
@@ -127,9 +273,9 @@ static void nav_ws35_trip_label_autofit(lv_obj_t *lbl, const char *txt)
     lv_label_set_text(lbl, txt);
     size_t n = strlen(txt);
     const lv_font_t *f = &lv_font_nav_vn_30;
-    if (n > 36U) {
+    if (strchr(txt, '\n') != NULL || n > 28U) {
         f = &lv_font_nav_vn_16;
-    } else if (n > 22U) {
+    } else if (n > 18U) {
         f = &lv_font_nav_vn_20;
     } else {
         f = &lv_font_nav_vn_30;
@@ -137,7 +283,7 @@ static void nav_ws35_trip_label_autofit(lv_obj_t *lbl, const char *txt)
     lv_obj_set_style_text_font(lbl, f, LV_PART_MAIN | LV_STATE_DEFAULT);
 }
 
-static lv_obj_t *nav_ws35_trip_col_value_only(lv_obj_t *parent, lv_obj_t **val_out)
+static lv_obj_t *nav_ws35_trip_col_value_only(lv_obj_t *parent, lv_obj_t **val_out, bool wrap_two_lines)
 {
     lv_obj_t *c = lv_obj_create(parent);
     lv_obj_set_flex_grow(c, 1);
@@ -150,7 +296,11 @@ static lv_obj_t *nav_ws35_trip_col_value_only(lv_obj_t *parent, lv_obj_t **val_o
     *val_out = lv_label_create(c);
     lv_label_set_text(*val_out, "-");
     lv_obj_set_width(*val_out, lv_pct(100));
-    lv_label_set_long_mode(*val_out, LV_LABEL_LONG_DOT);
+    if (wrap_two_lines) {
+        lv_label_set_long_mode(*val_out, LV_LABEL_LONG_WRAP);
+    } else {
+        lv_label_set_long_mode(*val_out, LV_LABEL_LONG_DOT);
+    }
     lv_obj_set_style_text_align(*val_out, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(*val_out, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
     nav_ws35_trip_label_autofit(*val_out, "-");
@@ -444,7 +594,7 @@ void ui_navScreen_screen_init()
         /* Trip info: 3 equal columns + thin vertical dividers */
         lv_obj_t *trip = lv_obj_create(ui_navPanel);
         lv_obj_set_width(trip, lv_pct(100));
-        lv_obj_set_height(trip, 56);
+        lv_obj_set_height(trip, 64);
         lv_obj_set_flex_flow(trip, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(trip, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_set_style_bg_color(trip, lv_color_hex(0x0A0A0A), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -456,21 +606,21 @@ void ui_navScreen_screen_init()
         lv_obj_set_style_pad_top(trip, 6, LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_pad_bottom(trip, 6, LV_PART_MAIN | LV_STATE_DEFAULT);
 
-        nav_ws35_trip_col_value_only(trip, &ui_navV2_trip_dur_val);
+        nav_ws35_trip_col_value_only(trip, &ui_navV2_trip_dur_val, true);
         lv_obj_t *div1 = lv_obj_create(trip);
         lv_obj_set_width(div1, 1);
         lv_obj_set_height(div1, 40);
         lv_obj_set_style_bg_color(div1, lv_color_hex(0x3C4043), LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_bg_opa(div1, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_border_width(div1, 0, LV_PART_MAIN);
-        nav_ws35_trip_col_value_only(trip, &ui_navV2_trip_dist_val);
+        nav_ws35_trip_col_value_only(trip, &ui_navV2_trip_dist_val, false);
         lv_obj_t *div2 = lv_obj_create(trip);
         lv_obj_set_width(div2, 1);
         lv_obj_set_height(div2, 40);
         lv_obj_set_style_bg_color(div2, lv_color_hex(0x3C4043), LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_bg_opa(div2, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_border_width(div2, 0, LV_PART_MAIN);
-        nav_ws35_trip_col_value_only(trip, &ui_navV2_trip_eta_val);
+        nav_ws35_trip_col_value_only(trip, &ui_navV2_trip_eta_val, false);
 
         /* Segment progress: Chronos nav packet has no progress field (vantc-navi keynote §5.1); bar reserved for future app extension */
         ui_navV2_prog_bar = lv_bar_create(ui_navPanel);
@@ -781,17 +931,38 @@ void navigation_refresh_status_bar(const char *clock_hm, int notif_cnt, int call
 #endif
 }
 #if defined(ESP32_TOUCH_LCD_35) && !defined(NAVIGATION_UI_LEGACY)
-void navigation_ws35_set_trip_row(const char *eta_raw, const char *duration, const char *distance)
+void navigation_ws35_set_trip_row(const char *eta_raw, const char *duration, const char *distance,
+                                  const char *title, const char *directions, int clock_h, int clock_m)
 {
     if (ui_navV2_trip_dur_val == NULL) {
         return;
     }
     static char eta_disp[80];
+    static char dur_disp[96];
     nav_ws35_format_eta_time(eta_raw != NULL ? eta_raw : "", eta_disp, sizeof(eta_disp));
     static const char dash[] = "-";
-    const char *dur = (duration != NULL && duration[0] != '\0') ? duration : dash;
+    const char *dur_raw = nav_ws35_best_duration_raw(duration, eta_raw, distance, title, directions);
+    bool used_eta_duration = false;
+    if (dur_raw != NULL && dur_raw[0] != '\0' && !nav_ws35_str_has_hours(dur_raw)) {
+        int eta_h = 0, eta_m = 0;
+        if (nav_ws35_parse_eta_hm(eta_raw, &eta_h, &eta_m) && clock_h >= 0 && clock_h <= 23 && clock_m >= 0 &&
+            clock_m <= 59) {
+            int until_mins = nav_ws35_minutes_until(clock_h, clock_m, eta_h, eta_m);
+            if (until_mins >= 60) {
+                nav_ws35_format_total_minutes(until_mins, dur_disp, sizeof(dur_disp));
+                used_eta_duration = true;
+            }
+        }
+    }
+    if (!used_eta_duration) {
+        if (dur_raw != NULL && dur_raw[0] != '\0') {
+            nav_ws35_format_duration_display(dur_raw, dur_disp, sizeof(dur_disp));
+        } else {
+            snprintf(dur_disp, sizeof(dur_disp), "%s", dash);
+        }
+    }
     const char *dist = (distance != NULL && distance[0] != '\0') ? distance : dash;
-    nav_ws35_trip_label_autofit(ui_navV2_trip_dur_val, dur);
+    nav_ws35_trip_label_autofit(ui_navV2_trip_dur_val, dur_disp);
     nav_ws35_trip_label_autofit(ui_navV2_trip_dist_val, dist);
     nav_ws35_trip_label_autofit(ui_navV2_trip_eta_val, (eta_disp[0] != '\0') ? eta_disp : dash);
 }

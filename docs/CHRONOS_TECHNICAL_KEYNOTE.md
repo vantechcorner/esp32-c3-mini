@@ -244,6 +244,75 @@ The icon sent to the watch is obtained **directly from the Google Maps notificat
 
 This matches the approach used by the Chronos app on the Play Store.
 
+### 5.6 VanTC-Navi — observed `duration` payload and fix (for Android team)
+
+**Live test date: 17 May 2026**
+
+**Setup:** Waveshare ESP32-Touch-LCD-3.5, firmware env `esp32_touch_lcd_3_5_wifi`, [VanTC-Navi](https://github.com/vantechcorner/vantc-navi) on Android, WiFi TCP to gateway port **8423** (length-prefixed Chronos packets, same payload as BLE). Navigation active with Google Maps turn-by-turn.
+
+#### Problem
+
+Google Maps showed **1 hour 25 minutes** remaining. The ESP32 Navigation V2 trip row (column 1) showed **25 minutes** only. Investigation confirmed the device receives and displays the `duration` string from the Chronos packet without truncating it in LVGL.
+
+#### What the device actually received (serial log)
+
+Firmware logs throttled ~every 2 seconds while navigation is active (`app_hal.cpp`):
+
+```text
+[INFO]: NAV dur='25 phút' eta='Dự kiến 23:56' dist='84 km' clk=22:31
+[INFO]: NAV dur='26 phút' eta='Dự kiến 23:56' dist='84 km' clk=22:31
+```
+
+| Field | Example values on wire | Role |
+|-------|------------------------|------|
+| `duration` | `25 phút`, `26 phút` | **Remaining travel time** — **incorrect:** minutes only |
+| `eta` | `Dự kiến 23:56` | Arrival time; firmware shows `23:56` in trip column 3 |
+| `distance` | `84 km` | Remaining trip distance (trip column 2) |
+| `title` | `0 m`, `84 km` | Distance to next maneuver (large green label) |
+| `directions` | (instruction text) | Main direction label |
+
+None of the six strings contained a full **“1 hour 25 minutes”** / **“1 giờ 25 phút”** phrase during this test.
+
+#### Protocol reminder (live packet `data[5] == 0x80`)
+
+String order after header bytes (see §5.2):
+
+```text
+title \0 → duration \0 → distance \0 → eta \0 → directions \0 → speed \0
+```
+
+`ChronosESP32` **overwrites all fields** on every live update. Empty strings clear the corresponding field on the watch.
+
+#### Required change in VanTC-Navi
+
+Populate **`duration`** (second string) with the **same remaining travel time text** the user sees in Google Maps, for example:
+
+- Vietnamese: `1 giờ 25 phút`
+- English: `1 hr 25 min`
+- Acceptable alternative: total minutes only if ≥ 60, e.g. `85 phút` (firmware can split into hours + minutes)
+
+Do **not** send only the minute component (`25 phút`) when Maps shows one hour plus minutes.
+
+Keep **`eta`** as **arrival time** (e.g. `Dự kiến 23:56`), not as a substitute for remaining duration.
+
+Review Android parsing of the Maps navigation notification: ensure no step extracts only `(\d+)\s*(phút|min)` and drops the hour segment before building the Chronos packet.
+
+#### How esp32-c3-mini uses the fields (Navigation V2, Touch 3.5)
+
+- `navigation_ws35_set_trip_row(eta, duration, distance, title, directions, clock_h, clock_m)` in `app_hal.cpp` after `navigateInfo(...)`.
+- Trip column 1: formatted `duration` (wrap, two lines for hours + minutes).
+- Trip column 3: `HH:MM` from `eta` via `nav_ws35_format_eta_time()`.
+
+**Temporary firmware workaround (17 May 2026 build):** if `duration` has no hour marker and synced clock + parsed ETA imply **≥ 60 minutes** until arrival, the watch derives hours/minutes from that delta. This depends on correct time sync and is not a substitute for fixing the app.
+
+#### Verification after app fix
+
+1. Maps displays `1 hour XX minutes` → serial shows `NAV dur='1 giờ XX phút'` (or `1 hr XX min`).
+2. Trips under one hour → `duration='45 phút'` (or equivalent).
+3. Live updates include non-empty `duration` whenever Maps shows remaining time.
+
+Internal handoff copy: [`cursor-handoff.md`](../cursor-handoff.md) — section **VanTC-Navi handoff**.
+
 ---
 
 ## 6. Other notable device → phone / phone → device flows

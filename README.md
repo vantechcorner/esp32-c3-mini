@@ -30,6 +30,12 @@ This fork emphasizes navigation, time, and weather on selected boards. For the *
 
 **Flash warning:** Do **not** flash `esp32_touch_lcd_3_5*` on a TTGO T-Display (different display driver, resolution, and flash layout).
 
+## Pre-built firmware (test builds)
+
+Test firmware binaries for the boards above are published on the **[GitHub Releases](https://github.com/vantechcorner/esp32-c3-mini/releases)** page. Download the `.bin` that matches your board and flash it with a web flasher (for example [ESPWebTool](https://esptool.spacehuhn.com/)) or `esptool`. Use the flash offset in the filename (e.g. `_0x0.bin` → address `0x0`, `_0x1000.bin` → `0x1000`).
+
+To build from source instead, see [Building with PlatformIO](#building-with-platformio) below.
+
 ### Waveshare ESP32-Touch-LCD-3.5 — Navigation UI
 
 On the **3.5"** board (320×480), navigation layout is chosen at **compile time** in [`src/apps/navigation/navigation.c`](src/apps/navigation/navigation.c):
